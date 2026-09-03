@@ -11,3 +11,7 @@ O projeto foi desenvolvido no âmbito do curso Desenvolvimento de Software Multi
 - JavaScript;
 - HTML / CSS / React / Tailwind ;
 - Mongoose / Express / Cors
+
+## Modelo de dados
+
+A proposta de migração do MongoDB para SQL, com o MER conceitual e o DER lógico em Mermaid, está em [`modelo-dados/README.md`](./modelo-dados/README.md).
