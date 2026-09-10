@@ -15,3 +15,7 @@ O projeto foi desenvolvido no âmbito do curso Desenvolvimento de Software Multi
 ## Modelo de dados
 
 A proposta de migração do MongoDB para SQL, com o MER conceitual e o DER lógico em Mermaid, está em [`modelo-dados/README.md`](./modelo-dados/README.md).
+
+## Arquitetura Azure
+
+A arquitetura de nuvem Azure, incluindo rede, segurança, serviços PaaS, observabilidade e estratégia de migração, está em [`arquitetura-azure/README.md`](./arquitetura-azure/README.md).
