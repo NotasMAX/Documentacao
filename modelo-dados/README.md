@@ -170,6 +170,93 @@ erDiagram
     }
 ```
 
+## Diagrama de classes
+
+O diagrama de classes representa as classes de domínio do modelo SQL recomendado. `Usuario` é a classe base dos perfis; `Matricula`, `TurmaDisciplina`, `SimuladoDisciplina` e `Resultado` representam os vínculos que possuem atributos próprios.
+
+```mermaid
+classDiagram
+    class Usuario {
+        +UUID idUsuario
+        +String nome
+        +String email
+        +String telefoneContato
+        +String senhaHash
+        +String tipoUsuario
+        +String resetToken
+        +DateTime resetTokenExpiraEm
+    }
+
+    class Aluno {
+        +String nomeResponsavel
+        +String telefoneResponsavel
+    }
+
+    class Professor
+    class Administrador
+
+    class Materia {
+        +UUID idMateria
+        +String nome
+    }
+
+    class Turma {
+        +UUID idTurma
+        +Integer serie
+        +Integer ano
+    }
+
+    class Matricula {
+        +UUID idMatricula
+        +Integer anoLetivo
+        +String status
+    }
+
+    class TurmaDisciplina {
+        +UUID idTurmaDisciplina
+    }
+
+    class Simulado {
+        +UUID idSimulado
+        +Integer numero
+        +String tipo
+        +Integer bimestre
+        +DateTime dataRealizacao
+        +String status
+    }
+
+    class SimuladoDisciplina {
+        +UUID idSimuladoDisciplina
+        +Integer quantidadeQuestoes
+        +Decimal peso
+    }
+
+    class Resultado {
+        +UUID idResultado
+        +Integer acertos
+        +Decimal nota
+        +String statusNotificacao
+    }
+
+    Usuario <|-- Aluno
+    Usuario <|-- Professor
+    Usuario <|-- Administrador
+
+    Aluno "1" --> "0..*" Matricula : possui
+    Turma "1" --> "0..*" Matricula : recebe
+    Turma "1" --> "0..*" TurmaDisciplina : oferece
+    Materia "1" --> "0..*" TurmaDisciplina : compoe
+    Professor "1" --> "0..*" TurmaDisciplina : leciona
+    Turma "1" --> "0..*" Simulado : possui
+    Simulado "1" --> "1..*" SimuladoDisciplina : contem
+    TurmaDisciplina "1" --> "0..*" SimuladoDisciplina : participa
+    SimuladoDisciplina "1" --> "0..*" Resultado : gera
+    Aluno "1" --> "0..*" Resultado : obtem
+
+    note for Usuario "Cada usuario deve ter exatamente um perfil compativel com tipoUsuario."
+    note for Simulado "Bimestre pode ser nulo quando status for agendado."
+```
+
 Os campos `createdAt` e `updatedAt` do MongoDB devem ser mapeados para `created_at` e `updated_at` no SQL. Como existem timestamps também nos subdocumentos `conteudos` e `resultados`, eles devem ser preservados em `simulado_disciplina` e `resultado` quando forem necessários para auditoria.
 
 ## Mapeamento MongoDB → SQL
