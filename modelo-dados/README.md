@@ -8,6 +8,22 @@ O sistema possui usuários com os perfis de aluno, professor e administrador. Ta
 
 No MongoDB, esses perfis estão armazenados em uma única coleção `Usuario`, diferenciados por `tipo_usuario`. No modelo SQL recomendado, os perfis são tabelas 1:1 especializadas de `usuario`. Cada usuário deve possuir exatamente um perfil; essa exclusividade deve ser garantida por transação na aplicação ou por trigger.
 
+## Tipos enumerados do domínio
+
+O modelo SQL deve usar enums para impedir valores fora do domínio em `usuario.tipo_usuario` e `simulado.tipo`:
+
+| Enum | Valores permitidos | Uso |
+|---|---|---|
+| `tipo_usuario` | `aluno`, `professor`, `administrador` | Perfil do usuário |
+| `tipo_simulado` | `objetivo`, `dissertativo` | Tipo de avaliação |
+
+No PostgreSQL, os tipos podem ser criados assim:
+
+```sql
+CREATE TYPE tipo_usuario AS ENUM ('aluno', 'professor', 'administrador');
+CREATE TYPE tipo_simulado AS ENUM ('objetivo', 'dissertativo');
+```
+
 ## MER conceitual
 
 O MER identifica as entidades e regras do domínio, sem amarrar o modelo a tipos específicos de banco:
@@ -97,7 +113,7 @@ erDiagram
         varchar email UK
         varchar telefone_contato
         varchar senha_hash
-        varchar tipo_usuario
+        tipo_usuario tipo_usuario
         varchar reset_token
         timestamp reset_token_expira_em
     }
@@ -146,10 +162,9 @@ erDiagram
         uuid id_simulado PK
         uuid turma_id FK
         integer numero
-        varchar tipo
+        tipo_simulado tipo
         integer bimestre
         timestamptz data_realizacao
-        varchar status
     }
 
     SIMULADO_DISCIPLINA {
@@ -176,13 +191,26 @@ O diagrama de classes representa as classes de domínio do modelo SQL recomendad
 
 ```mermaid
 classDiagram
+    class TipoUsuario {
+        <<enumeration>>
+        aluno
+        professor
+        administrador
+    }
+
+    class TipoSimulado {
+        <<enumeration>>
+        objetivo
+        dissertativo
+    }
+
     class Usuario {
         +UUID idUsuario
         +String nome
         +String email
         +String telefoneContato
         +String senhaHash
-        +String tipoUsuario
+        +TipoUsuario tipoUsuario
         +String resetToken
         +DateTime resetTokenExpiraEm
     }
@@ -219,10 +247,9 @@ classDiagram
     class Simulado {
         +UUID idSimulado
         +Integer numero
-        +String tipo
+        +TipoSimulado tipo
         +Integer bimestre
         +DateTime dataRealizacao
-        +String status
     }
 
     class SimuladoDisciplina {
@@ -241,6 +268,8 @@ classDiagram
     Usuario <|-- Aluno
     Usuario <|-- Professor
     Usuario <|-- Administrador
+    Usuario --> TipoUsuario : classifica
+    Simulado --> TipoSimulado : define
 
     Aluno "1" --> "0..*" Matricula : possui
     Turma "1" --> "0..*" Matricula : recebe
@@ -254,7 +283,6 @@ classDiagram
     Aluno "1" --> "0..*" Resultado : obtem
 
     note for Usuario "Cada usuario deve ter exatamente um perfil compativel com tipoUsuario."
-    note for Simulado "Bimestre pode ser nulo quando status for agendado."
 ```
 
 Os campos `createdAt` e `updatedAt` do MongoDB devem ser mapeados para `created_at` e `updated_at` no SQL. Como existem timestamps também nos subdocumentos `conteudos` e `resultados`, eles devem ser preservados em `simulado_disciplina` e `resultado` quando forem necessários para auditoria.
@@ -283,9 +311,12 @@ Durante a migração, é recomendável guardar o antigo ObjectId em uma coluna `
 - Para preservar o comportamento atual do backend, `turma_disciplina(turma_id, materia_id, professor_id)` deve ser único.
 - Se o domínio estabelecer apenas um professor por matéria e turma, substitua pela restrição mais forte `UNIQUE(turma_id, materia_id)`.
 - `simulado(turma_id, numero, bimestre)` deve ser único, conforme a regra implementada no controlador.
+- `simulado.bimestre` deve ser obrigatório (`NOT NULL`), inclusive quando `data_realizacao` estiver no futuro.
+- `simulado` não precisa de coluna `status`; considerar o simulado agendado quando `data_realizacao > CURRENT_TIMESTAMP`.
 - `simulado_disciplina(simulado_id, turma_disciplina_id)` deve ser único.
 - `resultado(simulado_disciplina_id, aluno_id)` deve ser único.
-- `tipo` deve aceitar somente `objetivo` ou `dissertativo`.
+- `usuario.tipo_usuario` deve usar o enum `tipo_usuario`, aceitando somente `aluno`, `professor` ou `administrador`.
+- `simulado.tipo` deve usar o enum `tipo_simulado`, aceitando somente `objetivo` ou `dissertativo`.
 - `status_notificacao` deve aceitar somente `pendente` ou `enviada`.
 - `acertos` não pode ser negativo nem maior que `quantidade_questoes`.
 
@@ -293,14 +324,13 @@ Durante a migração, é recomendável guardar o antigo ObjectId em uma coluna `
 
 ### Bimestre
 
-O modelo MongoDB exige `bimestre`, mas o `seed4` usa `0` para simulados futuros. Na base SQL, recomenda-se usar:
+O modelo MongoDB exige `bimestre`, e um simulado agendado continua pertencendo a um bimestre. O agendamento é uma condição derivada da data de realização:
 
-```text
-status = 'agendado'
-bimestre = NULL
+```sql
+data_realizacao > CURRENT_TIMESTAMP
 ```
 
-Na carga inicial, converter `bimestre = 0` para `NULL` e definir o status como `agendado`.
+Na carga inicial, os registros do `seed4` com `bimestre = 0` devem ser corrigidos para o bimestre real de cada simulado. Não converter `bimestre` para `NULL` nem criar `status = 'agendado'`. Se a instituição trabalhar com quatro bimestres, o valor deve ser validado no intervalo de `1` a `4`.
 
 ### Peso
 
