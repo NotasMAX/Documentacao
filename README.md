@@ -1,14 +1,17 @@
-# NotasMax — Sistema de Organização de Notas
+<p align="left" style="font-size:28px;"><strong><em>Documentação do PI</em></strong></p>
 
-**Centro Paula Souza — Faculdade de Tecnologia de Jahu**
-Curso de Tecnologia em Desenvolvimento de Software Multiplataforma
+<p><strong>NotasMax — Sistema de Organização de Notas</strong></p>
+
+**Centro Paula Souza — Faculdade de Tecnologia de Jahu**<br>
+Curso de Tecnologia em Desenvolvimento de Software Multiplataforma<br>
 Documentação do Projeto Interdisciplinar (PI)
 
 Jahu, SP — 6º semestre/2026
 
 **Autores:** Amauri Barbieri Filho,  Evelyn Cassinotte, Lucas Nono, Vinícius Gimenesv e Vinícius Nascimento.
 
-# 📑 Sumário
+<details>
+  <summary><strong>📑 Sumário</strong></summary>
 
 - [1. Introdução](#1-introdução)
   - [Objetivos](#-objetivos)
@@ -25,8 +28,10 @@ Jahu, SP — 6º semestre/2026
 - [9. Design](#9-design)
 - [10. Protótipo](#10-protótipo)
 - [11. Aplicação](#11-aplicação)
-- [12. Considerações finais](#12-considerações-finais) 
-- [13. Referências bibliograficas](#13-referências-bibliográficas)
+- [12. Considerações finais](#12-considerações-finais)
+- [13. Referências bibliográficas](#13-referências-bibliográficas)
+
+</details>
 
 ---
 
@@ -191,7 +196,7 @@ Um documento de requisitos descreve as funcionalidades, características e restr
 
 # 3. Modelo de casos de uso
 
-<img alt='' src='./imagens/modelo_casos_uso.png' style='width:550px'>
+<p align='center'><img alt='' src='./imagens/modelo_casos_uso.png' style='width:550px'></p>
 
 
 O diagrama de casos de uso mapeia as interações dos atores **Aluno**, **Professor** e **Admin** com o sistema NotasMax (login, cadastro/edição de alunos, professores, turmas, matérias e simulados, importação de planilhas, visualização de gráficos e notas, busca e recebimento de alertas/insights).
@@ -611,6 +616,12 @@ classDiagram
 
 **Análise SWOT (FOFA):**
 
+<p align='center'><strong>Figura 8 - Análise FOFA</strong></p>
+
+<p align='center'><img alt='Análise FOFA do projeto NotasMax' src='./imagens/analise_fofa.png' style='width: 750px;'></p>
+
+<p align='center'>Fonte: Os autores (2026).</p>
+
 | Forças | Oportunidades |
 |---|---|
 | Foco em necessidade real | Expansão para outras escolas |
@@ -630,7 +641,7 @@ classDiagram
 
 # 8. Regras de negócio (Modelo canvas)
 
-<img alt='' src='./imagens/modelo_canvas.png' style='width: 750px;'>
+<p align='center'><img alt='' src='./imagens/modelo_canvas.png' style='width: 750px;'></p>
 
 **Proposta de valor:** plataforma web educacional voltada à gestão de notas de simulados, permitindo que administradores cadastrem turmas, matérias, simulados e notas, com cálculo automático das médias bimestrais — digitalizando e otimizando o acompanhamento do desempenho escolar.
 
@@ -652,7 +663,7 @@ Definida com base nas cores do logotipo do Colégio Max, garantindo harmonia vis
 
 `#FFB90D` `#FFCC00` `#043666` `#1C86EB` `#FFCF58` `#FFE16B` `#4076A9` `#50AAFF` `#FFE29A` `#FFEDA6` `#84BCF2` `#96CCFF`
 
-<img alt='' src='./imagens/design/paleta_cores.png' style='width: 450px;'>
+<p align='center'><img alt='' src='./imagens/design/paleta_cores.png' style='width: 450px;'></p>
 
 
 ## Tipografia
@@ -660,16 +671,22 @@ Definida com base nas cores do logotipo do Colégio Max, garantindo harmonia vis
 - **Inter** — fonte principal, presente em toda a aplicação.
 - **Space Grotesk** — presente apenas na logo do site.
 
-<img alt='' src='./imagens/design/fonts.png' style='width: 450px;'>
+<p align='center'><img alt='' src='./imagens/design/fonts.png' style='width: 450px;'></p>
 
 ## Logo
 
 A logo utilizada no site é a logo do próprio Colégio Max ("Colégio MAX — Beny Macena").
 
-<img alt='' src='./imagens/design/logo.png' style='width: 450px;'>
+<p align='center'><img alt='' src='./imagens/design/logo.png' style='width: 450px;'></p>
 
 
 ## Wireframe / Modelo de navegação
+
+<p align='center'><strong>Figura 4 - Userflow</strong></p>
+
+<p align='center'><img alt='Userflow do NotasMax' src='./imagens/design/userflow.png' style='width: 750px;'></p>
+
+<p align='center'>Fonte: Os autores (2026)</p>
 
 Telas principais mapeadas no wireframe:
 - Aplicação Web — Tela inicial (dashboard com média geral, turmas de maior/menor desempenho, alertas/insights e gráfico de desempenho por turma)
@@ -677,6 +694,42 @@ Telas principais mapeadas no wireframe:
 - Aplicação Web — Tela de Notas por Disciplina de um Aluno
 - Aplicação Mobile — Tela Inicial do Aluno (nota geral, evolução, notas por matéria)
 - Aplicação Mobile — Tela Inicial do Professor (turmas, médias, média por turma)
+
+<p align='center'><strong>Figura 12 – Aplicação Web – Tela inicial</strong></p>
+
+<p align='center'><img alt='Wireframe da tela inicial da aplicação Web' src='./imagens/design/wireframe_aplicacao_web_tela_inicial.png' style='width: 750px;'></p>
+
+<p align='center'>Fonte: Os autores (2025).</p>
+
+<p align='center'><strong>Figura 13 – Aplicação Web – Tela Editar Turma</strong></p>
+
+<p align='center'><img alt='Wireframe da tela de edição de turma da aplicação Web' src='./imagens/design/wireframe_aplicacao_web_editar_turma.png' style='width: 750px;'></p>
+
+<p align='center'>Fonte: Os autores (2025).</p>
+
+<p align='center'><strong>Figura 14 – Aplicação Web – Tela de Notas por Disciplina de um Aluno</strong></p>
+
+<p align='center'><img alt='Wireframe da tela de notas por disciplina de um aluno na aplicação Web' src='./imagens/design/wireframe_aplicacao_web_notas_por_disciplina.png' style='width: 750px;'></p>
+
+<p align='center'>Fonte: Os autores (2025).</p>
+
+<p align='center'><strong>Figura 15 – Aplicação Mobile – Tela Inicial – Aluno</strong></p>
+
+<p align='center'><img alt='Wireframe da tela inicial do aluno na aplicação Mobile' src='./imagens/design/wireframe_aplicacao_mobile_tela_inicial_aluno.png' style='width: 450px;'></p>
+
+<p align='center'>Fonte: Os autores (2026).</p>
+
+<p align='center'><strong>Figura 16 – Aplicação Mobile – Tela Inicial – Professor</strong></p>
+
+<p align='center'><img alt='Wireframe da tela inicial do professor na aplicação Mobile' src='./imagens/design/wireframe_aplicacao_mobile_tela_inicial_professor.png' style='width: 450px;'></p>
+
+<p align='center'>Fonte: Os autores (2026).</p>
+
+<p align='center'><strong>Figura 17 – Aplicação Mobile – Desempenho de uma Turma – Professor</strong></p>
+
+<p align='center'><img alt='Wireframe do desempenho de uma turma na aplicação Mobile para o professor' src='./imagens/design/wireframe_aplicacao_mobile_desempenho_turma_professor.png' style='width: 450px;'></p>
+
+<p align='center'>Fonte: Os autores (2026).</p>
 
 O Wireframe do projeto se encontra no Figma: https://www.figma.com/design/3tUP5eB55kFrgwesGN6qAk/NotasMax
 
@@ -694,22 +747,22 @@ https://www.figma.com/design/3tUP5eB55kFrgwesGN6qAk/NotasMax
 Telas implementadas do sistema (capturas da aplicação):
 
 ## **Aplicação Web** — Tela de Listagem de Matérias (cadastro/edição de matérias)
-<img alt='' src='./imagens/aplicacao/aplicacao_web_tela_de_listagem_de_materias.png' style='width: 750px;'>
+<p align='center'><img alt='' src='./imagens/aplicacao/aplicacao_web_tela_de_listagem_de_materias.png' style='width: 750px;'></p>
 
 ## **Aplicação Web** — Tela de exibição de turmas (por ano letivo)
-<img alt='' src='./imagens/aplicacao/listagem_turmas_aplicacao_web.png' style='width: 750px;'>
+<p align='center'><img alt='' src='./imagens/aplicacao/listagem_turmas_aplicacao_web.png' style='width: 750px;'></p>
 
 ## **Aplicação Web** — Tela de edição de turmas (gerenciamento de alunos vinculados)
-<img alt='' src='./imagens/aplicacao/editar_turma_aplicacao_web.png' style='width: 750px;'>
+<p align='center'><img alt='' src='./imagens/aplicacao/editar_turma_aplicacao_web.png' style='width: 750px;'></p>
 
 ## **Aplicação Mobile** — Tela de Login (acesso via e-mail e senha, com recuperação de senha)
-<img alt='' src='./imagens/aplicacao/login_aplicacao_mobile.png' style='width: 450px;'>
+<p align='center'><img alt='' src='./imagens/aplicacao/login_aplicacao_mobile.png' style='width: 450px;'></p>
 
 ## **Aplicação Mobile** — Turmas do Professor (turmas ativas, total de alunos, médias)
-<img alt='' src='./imagens/aplicacao/lista_turmas_q_leceiona_aplicacao_mobile.png' style='width: 450px;'>
+<p align='center'><img alt='' src='./imagens/aplicacao/lista_turmas_q_leceiona_aplicacao_mobile.png' style='width: 450px;'></p>
 
 ## **Aplicação Mobile** — Desempenho de uma Turma (Professor): médias, melhor/pior aluno, evolução da turma por simulado, comparação entre alunos e distribuição de desempenho (bom/atenção/baixo)
-<img alt='' src='./imagens/aplicacao/desempenho_aplicacao_mobile.png' style='width: 450px;'>
+<p align='center'><img alt='' src='./imagens/aplicacao/desempenho_aplicacao_mobile.png' style='width: 450px;'></p>
 
 
 ---
