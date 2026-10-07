@@ -118,7 +118,7 @@ As tabelas abaixo reúnem os requisitos funcionais RF 1–34 e não funcionais R
 | Componente | Descrição implementada |
 |---|---|
 | API | Fundação Azure Functions v4 com Node.js 24 e TypeScript; Knex e `pg` para PostgreSQL. |
-| Website | Fundação React, Vite e TypeScript; cliente Axios preparado para uma URL pública de API. Há rotas de demonstração e fallback, ainda sem telas de negócio administrativas. |
+| Website | Fundação React, Vite e TypeScript; cliente Axios preparado para uma URL pública de API. |
 | Mobile | Arquitetura do Mobile na nova versão ainda não está definida |
 | Banco | PostgreSQL obrigatório para a nova versão. |
 | Cloud | Azure |
