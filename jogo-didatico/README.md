@@ -256,5 +256,3 @@ As funcionalidades abaixo sintetizam o catálogo funcionalidades, não necessari
 - **Acessibilidade e usabilidade:** avaliar formulários, navegação por teclado, leitura e responsividade com representantes dos perfis relevantes; critérios quantitativos ainda precisam ser definidos.
 - **Validação educacional/operacional:** confirmar com responsáveis e usuários da instituição se as informações e relatórios refletem os processos escolares aprovados. Esta validação é do NotasMAX, não das regras da competição didática.
 - **Dados de teste:** usar dados sintéticos, sem dados pessoais reais em desenvolvimento, CI ou demonstrações.
-
-Os testes atuais cobrem apenas as fundações existentes. Critérios verificáveis e automação de cada requisito devem ser adicionados junto às implementações correspondentes. A execução remota da CI da API foi deixada para outra fase e não é afirmada como concluída neste documento.
