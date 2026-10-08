@@ -118,7 +118,7 @@ As tabelas abaixo reúnem os requisitos funcionais RF 1–34 e não funcionais R
 | Componente | Descrição implementada |
 |---|---|
 | API | Fundação Azure Functions v4 com Node.js 24 e TypeScript; Knex e `pg` para PostgreSQL. |
-| Website | Fundação React, Vite e TypeScript; cliente Axios preparado para uma URL pública de API. Há rotas de demonstração e fallback, ainda sem telas de negócio administrativas. |
+| Website | Fundação React, Vite e TypeScript; cliente Axios preparado para uma URL pública de API. |
 | Mobile | Arquitetura do Mobile na nova versão ainda não está definida |
 | Banco | PostgreSQL obrigatório para a nova versão. |
 | Cloud | Azure |
@@ -256,5 +256,3 @@ As funcionalidades abaixo sintetizam o catálogo funcionalidades, não necessari
 - **Acessibilidade e usabilidade:** avaliar formulários, navegação por teclado, leitura e responsividade com representantes dos perfis relevantes; critérios quantitativos ainda precisam ser definidos.
 - **Validação educacional/operacional:** confirmar com responsáveis e usuários da instituição se as informações e relatórios refletem os processos escolares aprovados. Esta validação é do NotasMAX, não das regras da competição didática.
 - **Dados de teste:** usar dados sintéticos, sem dados pessoais reais em desenvolvimento, CI ou demonstrações.
-
-Os testes atuais cobrem apenas as fundações existentes. Critérios verificáveis e automação de cada requisito devem ser adicionados junto às implementações correspondentes. A execução remota da CI da API foi deixada para outra fase e não é afirmada como concluída neste documento.
