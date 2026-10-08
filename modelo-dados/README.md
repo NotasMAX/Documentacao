@@ -1,372 +1,321 @@
-# Modelo de dados do NotasMax
+# Modelo de dados do NotasMAX
 
-Este documento registra a proposta de migração do banco NoSQL/MongoDB para um banco relacional, preferencialmente PostgreSQL.
+## Objetivo e estado
 
-## Escopo atual
+Este documento descreve o modelo conceitual da nova versão. As versões web e mobile dos semestres 4 e 5 utilizaram MongoDB/NoSQL; a nova versão terá PostgreSQL como requisito, começará com a base vazia e não migrará registros do MongoDB.
 
-O sistema possui usuários com os perfis de aluno, professor e administrador. Também controla matérias, turmas, matrículas, disciplinas oferecidas por turma, simulados e resultados por aluno.
+Os diagramas são conceituais. A proposta física campo por campo está em [Matriz física inicial — V1](matriz-fisica-v1.md), ainda em revisão e sem autorização para migrations. O armazenamento de fotos em Azure Blob privado está decidido; as regras de arquivo e acesso aprovadas e as pendências restantes estão identificadas separadamente.
 
-No MongoDB, esses perfis estão armazenados em uma única coleção `Usuario`, diferenciados por `tipo_usuario`. No modelo SQL recomendado, os perfis são tabelas 1:1 especializadas de `usuario`. Cada usuário deve possuir exatamente um perfil; essa exclusividade deve ser garantida por transação na aplicação ou por trigger.
+## Regras de domínio aprovadas
 
-## Tipos enumerados do domínio
+### Usuários, perfis e oferta de matérias
 
-O modelo SQL deve usar enums para impedir valores fora do domínio em `usuario.tipo_usuario` e `simulado.tipo`:
+- Cada usuário possui um tipo de perfil armazenado em usuario.tipo_perfil e limitado a aluno, professor ou administrador. ALUNO e PROFESSOR são extensões 1:1; o banco deve impedir que a extensão não corresponda ao tipo, e a criação do usuário e da extensão ocorre na mesma transação. Dados específicos podem permanecer nessas tabelas.
+- USUARIO armazena nome completo, e-mail institucional e telefone de contato; o telefone é opcional para todos os perfis. ALUNO armazena também o telefone obrigatório do responsável.
+- O e-mail institucional é convertido para minúsculas antes de armazenar e comparar; sua unicidade vale entre todas as contas.
+- Uma matéria pode ser oferecida em uma turma por meio de turma_disciplina.
+- Cada matéria/turma pode ter vários professores. turma_disciplina_professor representa apenas a associação atual; não haverá histórico de atribuições.
+- Na criação do simulado, a lista inicial contém as matérias oferecidas pela turma selecionada. O administrador pode remover matérias e restaurar a lista completa. A seleção não apresenta professores. O simulado só pode ser salvo se houver ao menos uma matéria selecionada.
 
-| Enum | Valores permitidos | Uso |
-|---|---|---|
-| `tipo_usuario` | `aluno`, `professor`, `administrador` | Perfil do usuário |
-| `tipo_simulado` | `objetivo`, `dissertativo` | Tipo de avaliação |
+### Matrículas e participantes
 
-No PostgreSQL, os tipos podem ser criados assim:
+- A matrícula registra o período em que o aluno está vinculado à turma.
+- O administrador confirma explicitamente a realização. A confirmação registra um instante de auditoria com fuso, armazenado/tratado em UTC (PostgreSQL timestamptz), separado da data do simulado. Em uma transação, a lista de simulado_aluno é congelada usando as matrículas vigentes na data cadastrada do simulado.
+- Um aluno que não era elegível na data não recebe resultado, ausência ou pendência para aquele simulado. O tratamento de alunos que ingressam no meio do ano nos cálculos de médias será definido em versão posterior.
+- O início da matrícula é inclusivo e o fim é exclusivo: o período usa a convenção [início, fim).
 
-```sql
-CREATE TYPE tipo_usuario AS ENUM ('aluno', 'professor', 'administrador');
-CREATE TYPE tipo_simulado AS ENUM ('objetivo', 'dissertativo');
-```
+### Simulados
+
+- O número é inteiro e único por turma e ano letivo, independentemente do bimestre. Após remover um simulado, seu número pode ser reutilizado.
+- O bimestre é escolhido manualmente entre 1 e 4; o modelo não define datas para os bimestres.
+- Uma data anterior à data atual pode ser cadastrada com aviso. Os dados do simulado podem ser editados até a data de realização; as notas podem ser alteradas sem prazo final.
+- O tipo do simulado deve ser exibido e será um dos valores aprovados: `objetivo` ou `dissertativo`.
+
+### Resultados e médias
+
+- Cada participante congelado deve ter um resultado por matéria do simulado; cada combinação participante/matéria tem no máximo um resultado conceitual e começa como pendente.
+- Os estados são pendente, avaliado e ausente. Ausência é explícita. Um resultado inexistente não equivale a ausência; nota zero é válida.
+- Para resultados avaliados, a nota é calculada a partir de (acertos / total de questões) × 10; a nota calculada não será persistida como dado independente.
+- Os pesos dos simulados somam 1,0 (100%) por matéria e bimestre. Exemplo: nota 8,0 com peso 0,4 contribui com 3,2 para a média final da matéria.
+- A média final do aluno é a soma de cada nota multiplicada pelo respectivo peso. Resultado ausente contribui com zero. Enquanto houver resultado pendente, a média é provisória e mantém os pesos originais, sem redistribuí-los.
+- A média do bimestre da turma é a média aritmética das médias finais dos alunos. Deve haver aviso quando existem alunos com notas provisórias. Não devem ser exibidos avisos de possível distorção por ausência ou não participação em simulados.
 
 ## MER conceitual
 
-O MER identifica as entidades e regras do domínio, sem amarrar o modelo a tipos específicos de banco:
+O desenho guarda identidade e tipo de perfil em USUARIO; dados específicos de aluno, professor ou administrador podem ficar em tabelas próprias quando necessários. Também mostra a oferta da matéria, as associações atuais de professores e os participantes definidos pela matrícula vigente:
 
-- **USUARIO**: identidade, contato, autenticação e perfil de acesso.
-- **ALUNO**: especialização de usuário com dados do responsável.
-- **PROFESSOR**: especialização de usuário que leciona disciplinas.
-- **ADMINISTRADOR**: especialização de usuário que administra o sistema.
-- **MATERIA**: disciplina escolar, como Matemática ou Física.
-- **TURMA**: série e ano letivo.
-- **MATRICULA**: vínculo entre aluno e turma.
-- **TURMA_DISCIPLINA**: matéria oferecida em uma turma e professor responsável.
-- **SIMULADO**: avaliação realizada ou agendada para uma turma.
-- **SIMULADO_DISCIPLINA**: conteúdo de uma matéria dentro de um simulado, com quantidade de questões e peso.
-- **RESULTADO**: desempenho de um aluno em uma matéria de um simulado.
-
-```mermaid
+~~~mermaid
 flowchart LR
-    U["USUARIO<br/>identidade, contato e perfil"]
-    A["ALUNO<br/>dados do responsável"]
-    P["PROFESSOR<br/>perfil docente"]
-    AD["ADMINISTRADOR<br/>perfil administrativo"]
-    M["MATRICULA<br/>ano letivo e status"]
-    T["TURMA<br/>série e ano"]
-    MT["MATERIA<br/>nome"]
-    TD["TURMA_DISCIPLINA<br/>matéria e professor da turma"]
+    U["USUARIO<br/>tipo_perfil"]
+    A["ALUNO"]
+    P["PROFESSOR"]
+    M["MATRICULA<br/>período de validade"]
+    T["TURMA<br/>série e ano letivo"]
+    MT["MATERIA"]
+    TD["TURMA_DISCIPLINA<br/>oferta da matéria"]
+    TDP["TURMA_DISCIPLINA_PROFESSOR<br/>associação atual"]
     S["SIMULADO<br/>número, tipo, bimestre e data"]
     SD["SIMULADO_DISCIPLINA<br/>questões e peso"]
-    R["RESULTADO<br/>acertos, nota e notificação"]
+    SA["SIMULADO_ALUNO<br/>participante congelado"]
+    R["RESULTADO<br/>estado e nota"]
 
-    U -->|"especialização 1:0..1"| A
-    U -->|"especialização 1:0..1"| P
-    U -->|"especialização 1:0..1"| AD
-    A -->|"1:N"| M
-    T -->|"1:N"| M
-    T -->|"1:N"| TD
-    MT -->|"1:N"| TD
-    P -->|"1:N"| TD
-    T -->|"1:N"| S
-    S -->|"1:N"| SD
-    TD -->|"1:N"| SD
-    SD -->|"1:N"| R
-    A -->|"1:N"| R
-```
+    U -->|"dados específicos se tipo=aluno"| A
+    U -->|"dados específicos se tipo=professor"| P
+    A -->|"matrícula"| M
+    T -->|"recebe"| M
+    T -->|"oferece"| TD
+    MT -->|"é oferecida em"| TD
+    TD -->|"atribuições atuais"| TDP
+    P -->|"pode lecionar em várias associações"| TDP
+    T -->|"possui"| S
+    S -->|"avalia"| SD
+    TD -->|"matéria da turma"| SD
+    M -->|"vigente na data"| SA
+    S -->|"congela elegíveis"| SA
+    A -->|"participa"| SA
+    SA -->|"resultado por matéria"| R
+    SD -->|"matéria avaliada"| R
+~~~
 
-## DER lógico recomendado
+## DER conceitual
 
-As tabelas principais são:
+A estrutura abaixo registra entidades e atributos relevantes às decisões atuais. Identificadores e nomes são rótulos conceituais; não determinam os nomes finais de tabelas ou colunas.
 
-| Tabela | Responsabilidade |
-|---|---|
-| `usuario` | Dados comuns e autenticação |
-| `aluno` | Perfil e dados do responsável |
-| `professor` | Perfil de professor |
-| `administrador` | Perfil administrativo |
-| `materia` | Cadastro das matérias |
-| `turma` | Série e ano |
-| `matricula` | Alunos vinculados às turmas |
-| `turma_disciplina` | Professor e matéria de cada turma |
-| `simulado` | Cabeçalho do simulado |
-| `simulado_disciplina` | Disciplinas avaliadas e pesos |
-| `resultado` | Nota e acertos do aluno |
+| Entidade | Responsabilidade |
+| --- | --- |
+| usuario | Nome, e-mail institucional em minúsculas e, durante a troca, e-mail pendente de confirmação; telefone de contato; hash de senha Argon2id anulável até a primeira ativação; data de ativação atual; exclusão lógica; controle de falhas e bloqueio de login por conta e tipo de perfil |
+| sessao | Sessão web vinculada ao usuário; token opaco enviado no cookie e somente seu hash SHA-256 armazenado no PostgreSQL, com criação, última atividade, expiração e revogação |
+| token_ativacao, token_redefinicao_senha | Tokens aleatórios com hash SHA-256 único e validade; guardar somente o hash. Manter um registro atual por usuário e finalidade; ao emitir outro, remover o anterior. Remover o registro no consumo e limpar expirados diariamente, sem histórico de tokens. Redefinição só emite token para conta ativada; conta pendente segue pelo fluxo de ativação. |
+| foto_perfil | Metadata no PostgreSQL (chave do objeto, tipo de mídia, tamanho e datas) e arquivo em container privado do Azure Blob Storage; formatos JPEG/PNG e limite de 5 MB aprovados. Administradores podem ver fotos de todos os usuários; professores podem ver a própria foto e as fotos dos alunos das turmas às quais estão associados; cada aluno pode ver a própria foto. Não haverá ação independente para remover uma foto; o administrador pode substituí-la na edição do perfil, removendo o arquivo anterior do armazenamento ativo. Manter a foto enquanto a conta estiver ativa; ao excluir logicamente a conta, remover arquivo e metadata do armazenamento ativo |
+| aluno, professor | Extensões 1:1 com USUARIO para dados e vínculos próprios; ALUNO inclui telefone obrigatório do responsável |
+| materia | Matérias cadastradas |
+| turma | Série e ano letivo |
+| matricula | Vínculo do aluno com período de validade |
+| turma_disciplina | Matéria oferecida em uma turma |
+| turma_disciplina_professor | Professores associados atualmente à oferta |
+| simulado | Número, tipo, bimestre, data marcada e instante de confirmação da realização |
+| simulado_disciplina | Matéria selecionada, total de questões e peso |
+| simulado_aluno | Participante elegível congelado na ocorrência |
+| resultado | Resultado por participante e matéria |
 
-```mermaid
+~~~mermaid
 erDiagram
-    USUARIO ||--o| ALUNO : possui
-    USUARIO ||--o| PROFESSOR : possui
-    USUARIO ||--o| ADMINISTRADOR : possui
+    USUARIO ||--o| ALUNO : dados_especificos_se_tipo_aluno
+    USUARIO ||--o| PROFESSOR : dados_especificos_se_tipo_professor
+    USUARIO ||--o{ SESSAO : possui
+    USUARIO ||--o{ TOKEN_ATIVACAO : recebe
+    USUARIO ||--o{ TOKEN_REDEFINICAO_SENHA : recebe
+    USUARIO ||--o| FOTO_PERFIL : possui
+
+    USUARIO {
+        string tipo_perfil
+        string nome_completo
+        string email_institucional
+        string telefone_contato
+        string hash_senha
+        timestamptz ativado_em
+        timestamptz excluido_em
+        integer falhas_login_na_janela
+        timestamptz inicio_janela_falhas_login
+        timestamptz bloqueado_ate
+    }
+
+    SESSAO {
+        string hash_token_sha256
+        timestamptz criada_em
+        timestamptz ultima_atividade_em
+        timestamptz expira_em
+        timestamptz expira_absoluta_em
+        timestamptz revogada_em
+    }
+
+    TOKEN_ATIVACAO {
+        string hash_token_sha256
+        timestamptz expira_em
+    }
+
+    TOKEN_REDEFINICAO_SENHA {
+        string hash_token_sha256
+        timestamptz expira_em
+    }
+    ALUNO {
+        string telefone_responsavel
+    }
 
     ALUNO ||--o{ MATRICULA : possui
     TURMA ||--o{ MATRICULA : recebe
 
     TURMA ||--o{ TURMA_DISCIPLINA : oferece
     MATERIA ||--o{ TURMA_DISCIPLINA : compoe
-    PROFESSOR ||--o{ TURMA_DISCIPLINA : leciona
+    TURMA_DISCIPLINA ||--o{ TURMA_DISCIPLINA_PROFESSOR : possui
+    PROFESSOR ||--o{ TURMA_DISCIPLINA_PROFESSOR : associado
 
     TURMA ||--o{ SIMULADO : possui
     SIMULADO ||--|{ SIMULADO_DISCIPLINA : contem
-    TURMA_DISCIPLINA ||--o{ SIMULADO_DISCIPLINA : participa
+    TURMA_DISCIPLINA ||--o{ SIMULADO_DISCIPLINA : selecionavel
 
-    SIMULADO_DISCIPLINA ||--o{ RESULTADO : gera
-    ALUNO ||--o{ RESULTADO : obtem
+    SIMULADO ||--o{ SIMULADO_ALUNO : congela
+    ALUNO ||--o{ SIMULADO_ALUNO : participa
+    SIMULADO_ALUNO ||--o{ RESULTADO : recebe
+    SIMULADO_DISCIPLINA ||--o{ RESULTADO : avaliada
 
-    USUARIO {
-        uuid id_usuario PK
-        varchar nome
-        varchar email UK
-        varchar telefone_contato
-        varchar senha_hash
-        tipo_usuario tipo_usuario
-        varchar reset_token
-        timestamp reset_token_expira_em
-    }
-
-    ALUNO {
-        uuid id_usuario PK, FK
-        varchar nome_responsavel
-        varchar telefone_responsavel
-    }
-
-    PROFESSOR {
-        uuid id_usuario PK, FK
-    }
-
-    ADMINISTRADOR {
-        uuid id_usuario PK, FK
-    }
-
-    MATERIA {
-        uuid id_materia PK
-        varchar nome UK
-    }
-
-    TURMA {
-        uuid id_turma PK
-        integer serie
-        integer ano
+    SIMULADO {
+        integer numero
+        string tipo
+        integer bimestre
+        date data_realizacao
+        timestamptz instante_confirmacao_realizacao
     }
 
     MATRICULA {
-        uuid id_matricula PK
-        uuid aluno_id FK
-        uuid turma_id FK
-        integer ano_letivo
-        varchar status
-    }
-
-    TURMA_DISCIPLINA {
-        uuid id_turma_disciplina PK
-        uuid turma_id FK
-        uuid materia_id FK
-        uuid professor_id FK
-    }
-
-    SIMULADO {
-        uuid id_simulado PK
-        uuid turma_id FK
-        integer numero
-        tipo_simulado tipo
-        integer bimestre
-        timestamptz data_realizacao
+        date inicio_vigencia
+        date fim_vigencia
     }
 
     SIMULADO_DISCIPLINA {
-        uuid id_simulado_disciplina PK
-        uuid simulado_id FK
-        uuid turma_disciplina_id FK
-        integer quantidade_questoes
+        integer total_questoes
         decimal peso
     }
 
     RESULTADO {
-        uuid id_resultado PK
-        uuid simulado_disciplina_id FK
-        uuid aluno_id FK
         integer acertos
-        decimal nota
-        varchar status_notificacao
+        string status_resultado
     }
-```
+~~~
+
+Cada usuário possui exatamente um valor de tipo de perfil em USUARIO, limitado a aluno, professor ou administrador. As extensões ALUNO e PROFESSOR devem corresponder ao tipo em USUARIO; o banco deve rejeitar divergências. Cada resultado relaciona exatamente um participante congelado (`simulado_aluno`) a uma matéria do simulado (`simulado_disciplina`), e ambos devem pertencer ao mesmo simulado. A unicidade dessa combinação é aprovada. **Regra aprovada para o schema físico:** usar chaves estrangeiras compostas que incluam o identificador do simulado, impedindo combinações cruzadas. `nota_calculada` é derivada dos acertos e do total de questões, não armazenada como dado independente.
 
 ## Diagrama de classes
 
-O diagrama de classes representa as classes de domínio do modelo SQL recomendado. `Usuario` é a classe base dos perfis; `Matricula`, `TurmaDisciplina`, `SimuladoDisciplina` e `Resultado` representam os vínculos que possuem atributos próprios.
-
-```mermaid
+~~~mermaid
 classDiagram
-    class TipoUsuario {
-        <<enumeration>>
-        aluno
-        professor
-        administrador
-    }
-
-    class TipoSimulado {
-        <<enumeration>>
-        objetivo
-        dissertativo
-    }
-
     class Usuario {
-        +UUID idUsuario
-        +String nome
-        +String email
+        +BIGINT idUsuario
+        +String nomeCompleto
+        +String emailInstitucional
         +String telefoneContato
-        +String senhaHash
-        +TipoUsuario tipoUsuario
-        +String resetToken
-        +DateTime resetTokenExpiraEm
+        +String hashSenha
+        +DateTime ativadoEm
+        +DateTime excluidoEm
+        +Integer falhasLoginNaJanela
+        +DateTime inicioJanelaFalhasLogin
+        +DateTime bloqueadoAte
+        +String tipoPerfil
     }
+
 
     class Aluno {
-        +String nomeResponsavel
         +String telefoneResponsavel
     }
-
     class Professor
-    class Administrador
 
     class Materia {
-        +UUID idMateria
+        +BIGINT idMateria
         +String nome
     }
 
     class Turma {
-        +UUID idTurma
+        +BIGINT idTurma
         +Integer serie
-        +Integer ano
+        +Integer anoLetivo
     }
 
     class Matricula {
-        +UUID idMatricula
-        +Integer anoLetivo
-        +String status
+        +Date inicioVigencia
+        +Date fimVigencia
     }
 
-    class TurmaDisciplina {
-        +UUID idTurmaDisciplina
-    }
+    class TurmaDisciplina
+    class TurmaDisciplinaProfessor
 
     class Simulado {
-        +UUID idSimulado
+        +BIGINT idSimulado
         +Integer numero
-        +TipoSimulado tipo
+        +String tipo
         +Integer bimestre
-        +DateTime dataRealizacao
+        +Date dataRealizacao
+        +DateTime instanteConfirmacaoRealizacaoUtc
     }
 
     class SimuladoDisciplina {
-        +UUID idSimuladoDisciplina
-        +Integer quantidadeQuestoes
+        +Integer totalQuestoes
         +Decimal peso
     }
 
+    class SimuladoAluno
     class Resultado {
-        +UUID idResultado
         +Integer acertos
-        +Decimal nota
-        +String statusNotificacao
+        +String statusResultado
     }
 
-    Usuario <|-- Aluno
-    Usuario <|-- Professor
-    Usuario <|-- Administrador
-    Usuario --> TipoUsuario : classifica
-    Simulado --> TipoSimulado : define
+    Usuario "1" --> "0..1" Aluno : dados se tipo aluno
+    Usuario "1" --> "0..1" Professor : dados se tipo professor
 
     Aluno "1" --> "0..*" Matricula : possui
     Turma "1" --> "0..*" Matricula : recebe
     Turma "1" --> "0..*" TurmaDisciplina : oferece
     Materia "1" --> "0..*" TurmaDisciplina : compoe
-    Professor "1" --> "0..*" TurmaDisciplina : leciona
+    TurmaDisciplina "1" --> "0..*" TurmaDisciplinaProfessor : associacao atual
+    Professor "1" --> "0..*" TurmaDisciplinaProfessor : leciona
+
     Turma "1" --> "0..*" Simulado : possui
     Simulado "1" --> "1..*" SimuladoDisciplina : contem
-    TurmaDisciplina "1" --> "0..*" SimuladoDisciplina : participa
-    SimuladoDisciplina "1" --> "0..*" Resultado : gera
-    Aluno "1" --> "0..*" Resultado : obtem
+    TurmaDisciplina "1" --> "0..*" SimuladoDisciplina : selecionavel
+    Simulado "1" --> "0..*" SimuladoAluno : congela elegiveis
+    Aluno "1" --> "0..*" SimuladoAluno : participa
+    SimuladoAluno "1" --> "0..*" Resultado : recebe por materia
+    SimuladoDisciplina "1" --> "0..*" Resultado : avaliada
 
-    note for Usuario "Cada usuario deve ter exatamente um perfil compativel com tipoUsuario."
-```
+    note for Usuario "tipoPerfil aceita aluno, professor ou administrador. ALUNO e PROFESSOR são extensões 1:1, devem corresponder ao tipo e são criados na mesma transação do usuário. ADMINISTRADOR fica representado em USUARIO."
+    note for TurmaDisciplinaProfessor "Pode haver varios professores; nao ha historico."
+    note for Simulado "Numero unico por turma e ano letivo, sem depender do bimestre."
+    note for SimuladoAluno "Elegibilidade congelada pela matricula vigente na data do simulado."
+    note for Resultado "Estados: pendente, avaliado ou ausente. Ausencia explicita conta como zero; ausencia de registro nao equivale a ausente."
+~~~
 
-Os campos `createdAt` e `updatedAt` do MongoDB devem ser mapeados para `created_at` e `updated_at` no SQL. Como existem timestamps também nos subdocumentos `conteudos` e `resultados`, eles devem ser preservados em `simulado_disciplina` e `resultado` quando forem necessários para auditoria.
+## Fotos e presença
 
-## Mapeamento MongoDB → SQL
+Fotos de perfil fazem parte da V1 e se vinculam ao usuário; o envio pela API em multipart/form-data foi aprovado. O arquivo ficará em container privado do Azure Blob Storage, com metadata no PostgreSQL, e o tamanho máximo será 5 MB. Formatos aceitos aprovados: JPEG e PNG. Administradores podem ver fotos de todos os usuários; professores podem ver a própria foto e as fotos dos alunos das turmas às quais estão associados; cada aluno pode ver a própria foto. Não haverá ação independente para remover uma foto; o administrador pode substituí-la na edição do perfil, removendo o arquivo anterior do armazenamento ativo. A foto será mantida enquanto a conta estiver ativa; na exclusão lógica da conta, arquivo e metadata serão removidos do armazenamento ativo. O registro e a consulta de presença foram adiados para a V2 e não entram no schema da V1.
 
-| Origem no MongoDB | Destino SQL |
-|---|---|
-| `Usuarios` | `usuario`, `aluno`, `professor`, `administrador` |
-| `Materias` | `materia` |
-| `Turmas.alunos[]` | `matricula` |
-| `TurmaDisciplinas` | `turma_disciplina` |
-| `Simulados` | `simulado` |
-| `Simulados.conteudos[]` | `simulado_disciplina` |
-| `conteudos.resultados[]` | `resultado` |
+## Pontos de modelagem ainda abertos
 
-Durante a migração, é recomendável guardar o antigo ObjectId em uma coluna `mongo_id` temporária ou permanente. Essa coluna deve ser `UNIQUE` para permitir rastreabilidade e reconciliação.
 
-## Restrições recomendadas
 
-- `usuario.email` deve ser único e armazenado normalizado em minúsculas.
-- `materia.nome` deve ser único sem diferenciar maiúsculas e minúsculas.
-- `turma(serie, ano)` deve ser único no modelo atual.
-- `matricula(aluno_id, turma_id)` deve ser único.
-- Para manter a regra atual de uma turma por aluno em cada ano, use `UNIQUE(aluno_id, ano_letivo)`.
-- Para preservar o comportamento atual do backend, `turma_disciplina(turma_id, materia_id, professor_id)` deve ser único.
-- Se o domínio estabelecer apenas um professor por matéria e turma, substitua pela restrição mais forte `UNIQUE(turma_id, materia_id)`.
-- `simulado(turma_id, numero, bimestre)` deve ser único, conforme a regra implementada no controlador.
-- `simulado.bimestre` deve ser obrigatório (`NOT NULL`), inclusive quando `data_realizacao` estiver no futuro.
-- `simulado` não precisa de coluna `status`; considerar o simulado agendado quando `data_realizacao > CURRENT_TIMESTAMP`.
-- `simulado_disciplina(simulado_id, turma_disciplina_id)` deve ser único.
-- `resultado(simulado_disciplina_id, aluno_id)` deve ser único.
-- `usuario.tipo_usuario` deve usar o enum `tipo_usuario`, aceitando somente `aluno`, `professor` ou `administrador`.
-- `simulado.tipo` deve usar o enum `tipo_simulado`, aceitando somente `objetivo` ou `dissertativo`.
-- `status_notificacao` deve aceitar somente `pendente` ou `enviada`.
-- `acertos` não pode ser negativo nem maior que `quantidade_questoes`.
 
-## Tratamento dos dados inconsistentes
 
-### Bimestre
+- O armazenamento em Azure Blob privado, os formatos JPEG e PNG, o limite de 5 MB, a matriz de acesso e o ciclo de vida da foto estão definidos. Não existe remoção manual da foto; administrador pode substituí-la na edição do perfil. A foto permanece enquanto a conta estiver ativa e é removida do armazenamento ativo quando substituída ou quando a conta é excluída logicamente.
 
-O modelo MongoDB exige `bimestre`, e um simulado agendado continua pertencendo a um bimestre. O agendamento é uma condição derivada da data de realização:
+- Definir como alunos que ingressaram depois de um simulado participarão dos cálculos de média em versões futuras.
+- A matriz física ainda precisa de revisão final do DDL; as regras de distribuição de pesos já estão definidas em [matriz física V1](matriz-fisica-v1.md).
 
-```sql
-data_realizacao > CURRENT_TIMESTAMP
-```
+## Contexto histórico
 
-Na carga inicial, os registros do `seed4` com `bimestre = 0` devem ser corrigidos para o bimestre real de cada simulado. Não converter `bimestre` para `NULL` nem criar `status = 'agendado'`. Se a instituição trabalhar com quatro bimestres, o valor deve ser validado no intervalo de `1` a `4`.
+Os modelos e implementações MongoDB das versões anteriores servem como referência histórica para entender requisitos, mas não definem o modelo atual por si só. Esta nova base começa vazia; não há mapeamento de ObjectIds, carga inicial, reconciliação nem plano de migração de dados MongoDB. A documentação técnica da API e as decisões aprovadas para a nova versão complementam este modelo.
 
-### Peso
+## Direção para o schema inicial
 
-Os seeds utilizam tanto `100.0` quanto `100 / número_de_disciplinas`, enquanto o modelo possui default `1.0`. A proposta SQL adota percentual de `0` a `100`, usando `NUMERIC(5,2)`.
+Decisão aprovada em 2026-10-07: a entrega inicial do schema cobre todas as tabelas da V1, inclusive as usadas por subversões posteriores da V1; presença, importação de Excel e notificações ficam fora por serem V2. As tabelas serão entregues no mesmo conjunto inicial, organizadas em migrations Knex menores por assunto. O primeiro administrador será provisionado por seed manual e controlado, sem credenciais fixas no repositório, com senha em Argon2id e recusa se já houver administrador ativo. Isso não aprova o DDL final nem autoriza, por si só, o início da implementação.
 
-### Notificação
+## Revisão técnica em andamento — 2026-10-07
 
-O schema define `notificacao_enviada`, mas alguns seeds usam `notificacao_pendente`. Como o schema está com `strict: true`, esse campo divergente pode ser descartado. Durante a migração, converter ambos para `status_notificacao`.
+- **Regra aprovada e representada:** usuario.tipo_perfil guarda exatamente um dos valores aluno, professor ou administrador. A restrição de valores foi aprovada.
+- **Integridade de perfil aprovada:** as extensões ALUNO e PROFESSOR devem corresponder a usuario.tipo_perfil; criar o usuário e sua extensão na mesma transação. A técnica de constraint será definida no DDL.
+- **Dados cadastrais aprovados:** nome completo, e-mail institucional e telefone de contato ficam em USUARIO; o telefone é opcional para todos os perfis. O telefone do responsável fica em ALUNO e é obrigatório no cadastro do aluno.
+- **E-mail aprovado:** converter o endereço institucional inteiro para minúsculas antes de armazenar e comparar; aplicar unicidade entre todas as contas.
+- **Credencial aprovada:** incluir USUARIO.hash_senha, anulável até a primeira ativação, e armazenar somente o hash Argon2id da senha; ao ativar a conta, gravar o hash da senha escolhida; nunca guardar a senha em texto puro.
+- **Ativação aprovada:** USUARIO.ativado_em é anulável; nulo indica conta pendente e a ativação grava a data e hora atuais. Quando a troca confirmada de e-mail exigir nova ativação, limpar o campo, revogar as sessões ativas e recusar logins até a reativação. Manter o hash de senha atual até a reativação ser concluída e então substituí-lo pela senha escolhida. Não manter histórico de ativações.
+- **Exclusão lógica aprovada:** USUARIO.excluido_em é anulável; preenchê-lo ao excluir logicamente aluno, professor ou administrador, sem apagar os vínculos acadêmicos. Revogar todas as sessões da conta em SESSAO.revogada_em e recusar novos logins; o prazo de retenção dos dados permanece sem definição.
+- **Bloqueio de login aprovado:** guardar em USUARIO a quantidade de falhas na janela de 15 minutos, o início da janela e o horário até o qual a conta está bloqueada. O bloqueio ocorre após 5 falhas na janela e dura 15 minutos. Após login bem-sucedido, zerar o contador e remover o bloqueio. Se a janela expirar sem bloqueio, a próxima falha inicia outra janela com contador 1; depois que um bloqueio termina, a primeira nova falha também inicia uma janela com contador 1. Não limitar tentativas de login por IP.
+- **Regra física aprovada:** vincular cada resultado ao participante e à matéria do mesmo simulado por chaves estrangeiras compostas que incluam o identificador do simulado.
+- **Tipos aprovados:** `objetivo` e `dissertativo`; a representação física (CHECK, enum ou tabela de referência) será definida na implementação do schema.
+- **Estratégias físicas aprovadas:** impor a correspondência entre tipo_perfil e ALUNO/PROFESSOR com FKs compostas e constraint triggers adiadas ao fim da transação; armazenar sessões no PostgreSQL com hash único, validade e revogação; armazenar tokens com hash e validade, removendo os registros usados/invalidados e limpando expirados diariamente; guardar os arquivos de foto em container privado do Azure Blob Storage e sua chave, tipo de mídia, tamanho e datas no PostgreSQL. **Especificação física aguardando revisão final:** consultar a [matriz física V1](matriz-fisica-v1.md). Formatos JPEG/PNG e limite de 5 MB estão aprovados.
+- **Escopo inicial aprovado:** incluir todas as tabelas da V1 no primeiro conjunto de schema, em migrations por assunto; excluir as entidades de presença, importação de Excel e notificações da V2.
+- **Seed do primeiro administrador aprovado:** execução manual/controlada, sem credenciais fixas no repositório, senha protegida por Argon2id e recusa quando já houver administrador ativo. A forma operacional concreta será detalhada no escopo de implementação.
 
-### Referências de usuários
+## Decisões complementares — 2026-10-07
 
-Alguns schemas usam `ref: "Usuarios"`, enquanto o model é registrado como `Usuario`. A migração deve validar os relacionamentos pelo ObjectId e pelo conteúdo real das coleções, não apenas pelo nome do `ref`.
-
-## Regras que exigem validação adicional
-
-Duas regras atravessam mais de uma tabela e não são garantidas apenas por uma FK simples:
-
-1. Cada usuário deve ter exatamente um perfil compatível com `tipo_usuario`.
-2. A `turma_disciplina` usada em `simulado_disciplina` deve pertencer à mesma turma do `simulado`.
-3. O aluno de um `resultado` deve estar matriculado na turma do simulado na data da avaliação.
-
-Essas regras devem ser implementadas por transação na aplicação, trigger ou FKs compostas com colunas auxiliares.
-
-## Ordem sugerida de migração
-
-1. Criar as tabelas e constraints básicas.
-2. Migrar usuários e guardar o mapeamento `mongo_id → id_usuario`.
-3. Criar os perfis de aluno, professor e administrador.
-4. Migrar matérias e turmas.
-5. Transformar `Turmas.alunos[]` em registros de `matricula`.
-6. Migrar `turma_disciplina`.
-7. Migrar os cabeçalhos de `simulado`.
-8. Explodir `conteudos[]` em `simulado_disciplina`.
-9. Explodir `resultados[]` em `resultado`.
-10. Validar contagens, chaves, notas, acertos e médias antes de trocar a aplicação para o SQL.
-
-## Observação sobre o desenho
-
-Separar `aluno`, `professor` e `administrador` é uma opção de integridade recomendada. Para uma migração mais rápida, é possível manter todos os dados em `usuario`, preservar `tipo_usuario` e deixar `nome_responsavel` e `telefone_responsavel` como campos opcionais.
+- **Senha de teste do seed:** uma senha genérica poderá ser usada somente em testes isolados; essa permissão não se aplica a ambientes locais compartilhados, homologação ou produção. Fora de testes, não haverá valor padrão ou senha fixa no repositório; o fornecimento será detalhado no escopo de implementação.
+- **Troca de e-mail:** guardar o novo endereço em `USUARIO.email_pendente`; enquanto aguarda confirmação, a conta não aceita login e `ativado_em` fica nulo. O endereço atual só é substituído após confirmação pelo fluxo de ativação. A unicidade deve cobrir endereços atuais e pendentes com proteção contra concorrência no banco.
+- **Correção de ausência:** somente o administrador pode alterar um resultado de ausente para avaliado. Não será mantido histórico ou registro de auditoria das alterações de resultados.
+- **Diretrizes físicas aprovadas; matriz aguardando revisão final:** tipos, nulabilidade, padrões, chaves, constraints e índices estão detalhados na matriz física. Usar `BIGINT IDENTITY` para IDs internos, `DATE` para datas acadêmicas, `TIMESTAMPTZ` para instantes, `NUMERIC` para pesos com validação de faixa, `TEXT` com `CHECK` para valores finitos e FKs restritivas sem exclusão em cascata. A regra de distribuição de pesos foi definida; ainda falta revisar e aprovar o DDL proposto.
+- **Seed do primeiro administrador:** ficará em uma pasta `seed/` no repositório da API e será criado na Fase 1 da nova entrega de domínio. Permanecem as regras aprovadas: execução manual/controlada, sem credenciais fixas no repositório, hash Argon2id e recusa se já existir administrador ativo. O modo de fornecer a senha será detalhado no escopo da fase.

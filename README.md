@@ -378,95 +378,88 @@ sucesso.”
 
 # 4. Modelo do banco de dados
 
-O modelo físico SQL será disponibilizado após a migração; atualmente o schema físico é o MongoDB.
+As versões web e mobile dos semestres 4 e 5 utilizaram MongoDB/NoSQL. A nova versão terá PostgreSQL como requisito. Sua base começará vazia: não haverá migração de registros do MongoDB. Os diagramas desta documentação descrevem o domínio conceitualmente e não constituem schema físico, migrations ou definição final de tipos e constraints.
 
-O banco de dados atual do NotasMax é **não relacional (MongoDB)**, escolhido por garantir persistência e integridade dos dados em todas as fases da aplicação, permitindo estruturar e relacionar as informações de forma consistente.
+O detalhamento do modelo conceitual está em [modelo-dados/README.md](modelo-dados/README.md).
 
-**Migração planejada para banco relacional:** está em andamento o planejamento de migração do MongoDB para um banco de dados relacional. A proposta, com o levantamento do novo modelo de dados, está disponível em:
-https://github.com/NotasMAX/Documentacao/tree/main/modelo-dados
+## Escopo e regras aprovadas
 
-## Escopo atual
+O modelo contempla usuários e perfis, matérias oferecidas por turma, matrículas, simulados, participantes elegíveis e resultados. As regras de domínio aprovadas para este desenho são:
 
-O sistema possui usuários com os perfis de aluno, professor e administrador. Também controla matérias, turmas, matrículas, disciplinas oferecidas por turma, simulados e resultados por aluno.
+- Cada usuário possui exatamente um perfil compatível: aluno, professor ou administrador.
+- Uma matéria oferecida por uma turma pode ter mais de um professor associado. A associação representa a atribuição atual; não há histórico de professores.
+- Ao cadastrar um simulado, são apresentadas as matérias vinculadas à turma escolhida. O administrador pode remover matérias da seleção ou restaurar a lista completa. Professores não são apresentados nessa etapa.
+- O número do simulado é inteiro e único por turma e ano letivo, sem depender do bimestre. Um número removido pode ser reutilizado.
+- O bimestre é escolhido manualmente entre 1 e 4; não há datas de bimestre definidas no modelo.
+- Um simulado pode ser cadastrado com data anterior à data atual, com aviso. Os dados do simulado podem ser editados até a data de realização; as notas podem ser alteradas sem prazo final.
+- Quando o simulado ocorre, a lista de alunos elegíveis é congelada com base nas matrículas vigentes nessa data. O tratamento da data final da matrícula ainda não tem definição física.
+- Para cada participante congelado e matéria do simulado, o resultado tem estado pendente, avaliado ou ausente. Ausência é explícita; resultado inexistente não significa ausência. Nota zero é válida.
+- A nota do simulado é calculada por (acertos / total de questões) × 10; a nota calculada não é armazenada como dado independente.
+- Os pesos dos simulados somam 1,0 (100%) por matéria e bimestre. A média final do aluno é a soma das notas dos simulados multiplicadas por seus pesos. Resultado ausente contribui com zero; enquanto houver resultado pendente, a média é provisória e usa os pesos originais, sem redistribuição.
+- A média do bimestre da turma é a média aritmética das médias finais dos alunos. Deve ser informado quando houver alunos com notas provisórias. Não são exibidos avisos de possível distorção por ausência ou não participação em simulados.
 
-Neste modelo conceitual, os perfis são especializações 1:1 de `usuario`: cada usuário possui exatamente um perfil compatível com seu `tipo_usuario`. A forma de representar essa exclusividade no modelo físico ainda deverá ser definida.
+Casos de alunos que ingressam após um simulado não geram resultado, ausência ou pendência para esse simulado. Como tratar esses alunos nos cálculos de médias ficará para versão posterior.
 
 ## MER conceitual
 
-O MER identifica as entidades e regras do domínio, sem amarrar o modelo a tipos específicos de banco:
+O desenho separa a oferta de matéria, a atribuição atual de professores e a lista congelada de participantes:
 
-- **USUARIO**: identidade, contato, autenticação e perfil de acesso.
-- **ALUNO**: especialização de usuário com dados do responsável.
-- **PROFESSOR**: especialização de usuário que leciona disciplinas.
-- **ADMINISTRADOR**: especialização de usuário que administra o sistema.
-- **MATERIA**: disciplina escolar, como Matemática ou Física.
-- **TURMA**: série e ano letivo.
-- **MATRICULA**: vínculo entre aluno e turma, com período de validade.
-- **TURMA_DISCIPLINA**: matéria oferecida em uma turma.
-- **TURMA_DISCIPLINA_PROFESSOR**: associação de professores à matéria oferecida pela turma; permite mais de um professor e não mantém histórico de atribuições.
-- **SIMULADO**: avaliação realizada ou agendada para uma turma.
-- **SIMULADO_DISCIPLINA**: conteúdo de uma matéria dentro de um simulado, com quantidade de questões e peso.
-- **SIMULADO_ALUNO**: lista congelada dos alunos elegíveis quando o simulado ocorre.
-- **RESULTADO**: estado e desempenho de um participante em uma matéria do simulado.
-
-```mermaid
+~~~mermaid
 flowchart LR
-    U["USUARIO<br/>identidade, contato e perfil"]
-    A["ALUNO<br/>dados do responsável"]
-    P["PROFESSOR<br/>perfil docente"]
-    AD["ADMINISTRADOR<br/>perfil administrativo"]
+    U["USUARIO"]
+    A["ALUNO"]
+    P["PROFESSOR"]
+    AD["ADMINISTRADOR"]
     M["MATRICULA<br/>período de validade"]
-    T["TURMA<br/>série e ano"]
-    MT["MATERIA<br/>nome"]
-    TD["TURMA_DISCIPLINA<br/>matéria oferecida pela turma"]
-    TDP["TURMA_DISCIPLINA_PROFESSOR<br/>associação atual de professores"]
+    T["TURMA<br/>série e ano letivo"]
+    MT["MATERIA"]
+    TD["TURMA_DISCIPLINA<br/>matéria oferecida"]
+    TDP["TURMA_DISCIPLINA_PROFESSOR<br/>associação atual"]
     S["SIMULADO<br/>número, tipo, bimestre e data"]
     SD["SIMULADO_DISCIPLINA<br/>questões e peso"]
-    SA["SIMULADO_ALUNO<br/>alunos elegíveis congelados"]
+    SA["SIMULADO_ALUNO<br/>participante congelado"]
     R["RESULTADO<br/>pendente, avaliado ou ausente"]
 
-    U -->|"perfil compatível 1:1"| A
-    U -->|"perfil compatível 1:1"| P
-    U -->|"perfil compatível 1:1"| AD
-    A -->|"1:N"| M
-    T -->|"1:N"| M
-    T -->|"1:N"| TD
-    MT -->|"1:N"| TD
-    TD -->|"1:N"| TDP
-    P -->|"1:N"| TDP
-    T -->|"1:N"| S
-    S -->|"1:N"| SD
-    TD -->|"1:N"| SD
-    M -->|"elegibilidade na data"| SA
-    S -->|"1:N"| SA
-    A -->|"1:N"| SA
-    SA -->|"1:N"| R
-    SD -->|"1:N"| R
-```
+    U -->|"perfil 1:1"| A
+    U -->|"perfil 1:1"| P
+    U -->|"perfil 1:1"| AD
+    A -->|"matrícula"| M
+    T -->|"recebe"| M
+    T -->|"oferece"| TD
+    MT -->|"é oferecida em"| TD
+    TD -->|"atribuições atuais"| TDP
+    P -->|"pode lecionar em várias turmas"| TDP
+    T -->|"possui"| S
+    S -->|"avalia"| SD
+    TD -->|"matéria da turma"| SD
+    M -->|"vigente na data do simulado"| SA
+    S -->|"congela participantes"| SA
+    A -->|"participa"| SA
+    SA -->|"tem resultado por matéria"| R
+    SD -->|"é avaliada em"| R
+~~~
 
-Quando o simulado ocorre, a lista de alunos elegíveis é congelada em `SIMULADO_ALUNO`, considerando o período de validade da matrícula naquela data. Cada simulado pertence a uma turma e suas matérias devem corresponder às matérias oferecidas para essa mesma turma. A ausência deve ser registrada explicitamente como `ausente`; um resultado inexistente não significa ausência. Nota zero é válida. Os estados previstos para o resultado são `pendente`, `avaliado` e `ausente`.
+A matrícula vigente na data do simulado determina a elegibilidade. O congelamento preserva essa lista mesmo que a situação de matrícula mude depois. A modelagem não define se o último dia de validade é inclusivo.
 
 ## DER conceitual proposto
 
-O diagrama abaixo apresenta uma proposta conceitual; nomes, atributos e identificadores podem ser revistos no desenho físico e não definem tipos SQL ou restrições físicas.
+A tabela apresenta entidades e responsabilidades conceituais; nomes, atributos, identificadores e restrições ainda podem mudar no desenho físico.
 
-| Tabela | Responsabilidade |
+| Entidade | Responsabilidade |
 | --- | --- |
-| `usuario` | Dados comuns e autenticação |
-| `aluno` | Perfil e dados do responsável |
-| `professor` | Perfil de professor |
-| `administrador` | Perfil administrativo |
-| `materia` | Cadastro das matérias |
-| `turma` | Série e ano |
-| `matricula` | Aluno vinculado à turma e período de validade |
-| `turma_disciplina` | Matéria oferecida em uma turma |
-| `turma_disciplina_professor` | Associação atual de professores, sem histórico de atribuições |
-| `simulado` | Cabeçalho do simulado |
-| `simulado_disciplina` | Disciplinas avaliadas e pesos |
-| `simulado_aluno` | Lista congelada de alunos elegíveis na ocorrência |
-| `resultado` | Estado e nota do participante por matéria do simulado |
+| usuario | Identidade, contato e autenticação |
+| aluno, professor, administrador | Perfis 1:1 compatíveis com o usuário |
+| materia | Cadastro de matérias |
+| turma | Série e ano letivo |
+| matricula | Vínculo do aluno com período de validade |
+| turma_disciplina | Matéria oferecida por uma turma |
+| turma_disciplina_professor | Associação atual, possivelmente múltipla, sem histórico |
+| simulado | Número, tipo, bimestre e data de realização |
+| simulado_disciplina | Matérias selecionadas, quantidade de questões e peso |
+| simulado_aluno | Lista congelada de participantes elegíveis |
+| resultado | Estado e desempenho do participante em uma matéria |
 
-```mermaid
+~~~mermaid
 erDiagram
     USUARIO ||--o| ALUNO : perfil
     USUARIO ||--o| PROFESSOR : perfil
@@ -481,136 +474,63 @@ erDiagram
     TURMA_DISCIPLINA ||--o{ TURMA_DISCIPLINA_PROFESSOR : possui
 
     TURMA ||--o{ SIMULADO : possui
-    SIMULADO ||--|{ SIMULADO_DISCIPLINA : contem
-    TURMA_DISCIPLINA ||--o{ SIMULADO_DISCIPLINA : participa
+    SIMULADO ||--o{ SIMULADO_DISCIPLINA : contem
+    TURMA_DISCIPLINA ||--o{ SIMULADO_DISCIPLINA : pode_ser_selecionada
 
     SIMULADO ||--o{ SIMULADO_ALUNO : congela_elegiveis
     ALUNO ||--o{ SIMULADO_ALUNO : participante
     SIMULADO_ALUNO ||--o{ RESULTADO : recebe
     SIMULADO_DISCIPLINA ||--o{ RESULTADO : materia_avaliada
 
-    USUARIO {
-        identificador id_usuario PK
-        texto nome
-        texto email UK
-        texto telefone_contato
-        texto senha_hash
-        texto tipo_usuario
-        texto reset_token
-        data_hora reset_token_expira_em
-    }
-
-    ALUNO {
-        identificador id_usuario PK, FK
-        texto nome_responsavel
-        texto telefone_responsavel
-    }
-
-    PROFESSOR {
-        identificador id_usuario PK, FK
-    }
-
-    ADMINISTRADOR {
-        identificador id_usuario PK, FK
-    }
-
-    MATERIA {
-        identificador id_materia PK
-        texto nome UK
-    }
-
-    TURMA {
-        identificador id_turma PK
-        numero serie
-        numero ano
+    SIMULADO {
+        integer numero
+        integer bimestre
+        date data_realizacao
     }
 
     MATRICULA {
-        identificador id_matricula PK
-        identificador aluno_id FK
-        identificador turma_id FK
-        data inicio_validade
-        data fim_validade
-    }
-
-    TURMA_DISCIPLINA {
-        identificador id_turma_disciplina PK
-        identificador turma_id FK
-        identificador materia_id FK
-    }
-
-    TURMA_DISCIPLINA_PROFESSOR {
-        identificador id_associacao PK
-        identificador turma_disciplina_id FK
-        identificador professor_id FK
-    }
-
-    SIMULADO {
-        identificador id_simulado PK
-        identificador turma_id FK
-        numero numero
-        texto tipo
-        numero bimestre
-        data_hora data_realizacao
-        texto status
+        date inicio_vigencia
+        date fim_vigencia
     }
 
     SIMULADO_DISCIPLINA {
-        identificador id_simulado_disciplina PK
-        identificador simulado_id FK
-        identificador turma_disciplina_id FK
-        numero quantidade_questoes
-        numero peso
-    }
-
-    SIMULADO_ALUNO {
-        identificador id_simulado_aluno PK
-        identificador simulado_id FK
-        identificador aluno_id FK
+        integer total_questoes
+        decimal peso
     }
 
     RESULTADO {
-        identificador id_resultado PK
-        identificador simulado_aluno_id FK
-        identificador simulado_disciplina_id FK
-        numero acertos
-        numero nota_opcional
-        texto status_resultado
-    }
-```
+        integer acertos
 
-As relações de perfil indicam as especializações possíveis; a regra exige exatamente um perfil compatível por usuário. Para cada participante congelado e matéria do simulado, pode haver no máximo um resultado. `ausente` é um estado explícito; resultado inexistente não equivale a ausência, e nota zero é válida.
+        string status_resultado
+    }
+~~~
+
+RESULTADO associa um participante congelado a uma matéria do simulado. Conceitualmente, deve existir no máximo um resultado para cada par participante/matéria; cada resultado começa pendente. nota_calculada representa a fórmula de acertos e não decide se o valor será armazenado ou calculado sob demanda. O estado de notificação não faz parte do resultado acadêmico.
+
+## Fotos e presença
+
+O armazenamento de fotos, o registro de presença e a consulta de presenças fazem parte do escopo da aplicação. A entidade a que a foto se vincula, o formato de armazenamento, a identificação para presença (crachá, QR Code ou outra forma), o fluxo de registro e a relação entre presença e resultado continuam pendentes. Por isso, esses elementos ainda não estão representados como entidades neste modelo. Ainda deve ser definido se um simulado pode permanecer sem matérias após a seleção do administrador.
 
 ---
 
 # 5. Banco de dados
 
-Tecnologia utilizada: **MongoDB** (não relacional), integrado ao backend Node.js/Express tanto na aplicação web quanto na mobile.
+MongoDB/NoSQL foi utilizado nas versões web e mobile dos semestres 4 e 5. Para a nova versão, PostgreSQL é requisito. A base nova começa vazia e não receberá migração de registros do MongoDB.
 
 ---
 
 # 6. Diagrama de classes
 
-O diagrama de classes representa uma proposta conceitual para as regras de domínio descritas na seção 4. `Usuario` é a classe base dos perfis; as classes de associação representam vínculos que possuem atributos próprios. O diagrama não define o modelo físico.
+O diagrama representa as regras conceituais da seção 4. Ele não define tabelas físicas, tipos SQL, estratégia de autenticação nem a forma de persistir a nota calculada.
 
-```mermaid
+~~~mermaid
 classDiagram
     class Usuario {
         +UUID idUsuario
-        +String nome
-        +String email
-        +String telefoneContato
-        +String senhaHash
         +String tipoUsuario
-        +String resetToken
-        +DateTime resetTokenExpiraEm
     }
 
-    class Aluno {
-        +String nomeResponsavel
-        +String telefoneResponsavel
-    }
-
+    class Aluno
     class Professor
     class Administrador
 
@@ -622,47 +542,35 @@ classDiagram
     class Turma {
         +UUID idTurma
         +Integer serie
-        +Integer ano
+        +Integer anoLetivo
     }
 
     class Matricula {
-        +UUID idMatricula
-        +Date dataInicioValidade
-        +Date dataFimValidade
+        +Date inicioVigencia
+        +Date fimVigencia
     }
 
-    class TurmaDisciplina {
-        +UUID idTurmaDisciplina
-    }
-
-    class TurmaDisciplinaProfessor {
-        +UUID idAssociacao
-    }
+    class TurmaDisciplina
+    class TurmaDisciplinaProfessor
 
     class Simulado {
         +UUID idSimulado
         +Integer numero
         +String tipo
         +Integer bimestre
-        +DateTime dataRealizacao
-        +String status
+        +Date dataRealizacao
     }
 
     class SimuladoDisciplina {
-        +UUID idSimuladoDisciplina
-        +Integer quantidadeQuestoes
+        +Integer totalQuestoes
         +Decimal peso
     }
 
+    class SimuladoAluno
     class Resultado {
-        +UUID idResultado
         +Integer acertos
-        +Decimal notaOpcional
-        +String statusResultado
-    }
 
-    class SimuladoAluno {
-        +UUID idSimuladoAluno
+        +String statusResultado
     }
 
     Usuario <|-- Aluno
@@ -673,22 +581,23 @@ classDiagram
     Turma "1" --> "0..*" Matricula : recebe
     Turma "1" --> "0..*" TurmaDisciplina : oferece
     Materia "1" --> "0..*" TurmaDisciplina : compoe
-    Professor "1" --> "0..*" TurmaDisciplinaProfessor : associado
-    TurmaDisciplina "1" --> "0..*" TurmaDisciplinaProfessor : possui
-    Turma "1" --> "0..*" Simulado : possui
-    Simulado "1" --> "1..*" SimuladoDisciplina : contem
-    TurmaDisciplina "1" --> "0..*" SimuladoDisciplina : participa
-    Simulado "1" --> "0..*" SimuladoAluno : congela elegiveis
-    Aluno "1" --> "0..*" SimuladoAluno : participante
-    SimuladoAluno "1" --> "0..*" Resultado : recebe
-    SimuladoDisciplina "1" --> "0..*" Resultado : materia avaliada
+    Professor "1" --> "0..*" TurmaDisciplinaProfessor : leciona
+    TurmaDisciplina "1" --> "0..*" TurmaDisciplinaProfessor : associacao atual
 
-    note for Usuario "Cada usuario deve ter exatamente um perfil compativel com tipoUsuario."
-    note for TurmaDisciplinaProfessor "Associacao atual; nao ha historico de atribuicoes."
-    note for SimuladoAluno "Lista congelada dos alunos elegiveis na data de ocorrencia, considerando a validade da matricula."
-    note for SimuladoDisciplina "As materias devem pertencer a turma do simulado."
-    note for Resultado "Estados: pendente, avaliado ou ausente. Registro inexistente nao significa ausente; nota zero e valida."
-```
+    Turma "1" --> "0..*" Simulado : possui
+    Simulado "1" --> "0..*" SimuladoDisciplina : contem
+    TurmaDisciplina "1" --> "0..*" SimuladoDisciplina : pode ser selecionada
+    Simulado "1" --> "0..*" SimuladoAluno : congela elegiveis
+    Aluno "1" --> "0..*" SimuladoAluno : participa
+    SimuladoAluno "1" --> "0..*" Resultado : recebe por materia
+    SimuladoDisciplina "1" --> "0..*" Resultado : avaliada
+
+    note for Usuario "Cada usuario possui exatamente um perfil compativel."
+    note for TurmaDisciplinaProfessor "Pode haver varios professores; a atribuicao atual nao mantem historico."
+    note for Simulado "Numero inteiro unico por turma e ano letivo, independente do bimestre; pode ser reutilizado apos remocao."
+    note for SimuladoAluno "Participantes elegiveis sao congelados na data de realizacao, conforme matriculas vigentes."
+    note for Resultado "Estados: pendente, avaliado ou ausente. Ausencia explicita contribui com zero; registro inexistente nao significa ausencia. Nota zero e valida."
+~~~
 
 ---
 
