@@ -113,6 +113,7 @@ erDiagram
         string tipo_perfil
         string nome_completo
         string email_institucional
+        string email_pendente
         string telefone_contato
         string hash_senha
         timestamptz ativado_em
@@ -320,6 +321,7 @@ O schema inicial cobre todas as tabelas da V1, inclusive as usadas por subversõ
 ## Decisões complementares — 2026-10-07
 
 - **Senha de teste do seed:** uma senha genérica poderá ser usada somente em testes isolados; essa permissão não se aplica a ambientes locais compartilhados, homologação ou produção. Fora de testes, não haverá valor padrão ou senha fixa no repositório; o fornecimento será detalhado no escopo de implementação.
-- **Troca de e-mail:** guardar o novo endereço em `USUARIO.email_pendente`; enquanto aguarda confirmação, a conta não aceita login e `ativado_em` fica nulo. O endereço atual só é substituído após confirmação pelo fluxo de ativação. A unicidade deve cobrir endereços atuais e pendentes com proteção contra concorrência no banco.
+- **Troca de e-mail:** somente um administrador pode alterar o endereço de outra conta; a API rejeita a tentativa de alterar o próprio e-mail com `422 VALIDATION_ERROR` e `errors[].code: INVALID_VALUE`. Guardar o novo endereço em `USUARIO.email_pendente`; enquanto aguarda confirmação, a conta não aceita login e `ativado_em` fica nulo. A alteração do endereço pendente e a invalidação do token de ativação anterior ocorrem na mesma transação. Um novo token só é emitido depois do commit. O endereço atual só é substituído após confirmação pelo fluxo de ativação; a confirmação reativa a conta e revoga as sessões existentes. A unicidade deve cobrir endereços atuais e pendentes com proteção contra concorrência no banco.
+- **Eventos de segurança:** a API registra eventos operacionais mínimos pelo logger da Azure Functions, sem persistir logs no PostgreSQL. Não registrar senhas, tokens, conteúdo de requisição, dados pessoais desnecessários nem erros crus do banco.
 - **Correção de ausência:** somente o administrador pode alterar um resultado de ausente para avaliado. Não será mantido histórico ou registro de auditoria das alterações de resultados.
 - **Diretrizes físicas:** tipos, nulabilidade, padrões, chaves, constraints e índices estão detalhados na matriz física. Usar `BIGINT IDENTITY` para IDs internos, `DATE` para datas acadêmicas, `TIMESTAMPTZ` para instantes, `NUMERIC` para pesos com validação de faixa, `TEXT` com `CHECK` para valores finitos e FKs restritivas sem exclusão em cascata. A matriz física V1 serve de referência para o schema inicial.
