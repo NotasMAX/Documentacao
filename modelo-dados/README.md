@@ -2,9 +2,11 @@
 
 ## Objetivo e estado
 
+**Atualizado em:** 2026-10-10
+
 Este documento descreve o modelo conceitual da nova versão. As versões web e mobile dos semestres 4 e 5 utilizaram MongoDB/NoSQL; a nova versão terá PostgreSQL como requisito, começará com a base vazia e não migrará registros do MongoDB.
 
-Os diagramas são conceituais. A proposta física campo por campo está em [Matriz física inicial — V1](matriz-fisica-v1.md), ainda em revisão e sem autorização para migrations. O armazenamento de fotos em Azure Blob privado está decidido; as regras de arquivo e acesso aprovadas e as pendências restantes estão identificadas separadamente.
+Os diagramas são conceituais. A [matriz física inicial — V1](matriz-fisica-v1.md) detalha tipos, chaves e restrições do schema inicial. O modelo físico inclui a estrutura PostgreSQL e os campos da cota de redefinição. O armazenamento de fotos usa um container privado do Azure Blob Storage; formatos, limites e regras de acesso estão descritos neste documento.
 
 ## Regras de domínio aprovadas
 
@@ -83,7 +85,7 @@ A estrutura abaixo registra entidades e atributos relevantes às decisões atuai
 
 | Entidade | Responsabilidade |
 | --- | --- |
-| usuario | Nome, e-mail institucional em minúsculas e, durante a troca, e-mail pendente de confirmação; telefone de contato; hash de senha Argon2id anulável até a primeira ativação; data de ativação atual; exclusão lógica; controle de falhas e bloqueio de login por conta e tipo de perfil |
+| usuario | Nome, e-mail institucional em minúsculas e, durante a troca, e-mail pendente de confirmação; telefone de contato; hash de senha Argon2id anulável até a primeira ativação; data de ativação atual; exclusão lógica; controle de falhas e bloqueio de login; contador de pedidos de redefinição por usuário em janela fixa de 24 horas iniciada no primeiro pedido; até três pedidos, reset após redefinição concluída ou login bem-sucedido, sem limite por IP, com resposta genérica 200 e sem novo e-mail após o limite |
 | sessao | Sessão web vinculada ao usuário; token opaco enviado no cookie e somente seu hash SHA-256 armazenado no PostgreSQL, com criação, última atividade, expiração e revogação |
 | token_ativacao, token_redefinicao_senha | Tokens aleatórios com hash SHA-256 único e validade; guardar somente o hash. Manter um registro atual por usuário e finalidade; ao emitir outro, remover o anterior. Remover o registro no consumo e limpar expirados diariamente, sem histórico de tokens. Redefinição só emite token para conta ativada; conta pendente segue pelo fluxo de ativação. |
 | foto_perfil | Metadata no PostgreSQL (chave do objeto, tipo de mídia, tamanho e datas) e arquivo em container privado do Azure Blob Storage; formatos JPEG/PNG e limite de 5 MB aprovados. Administradores podem ver fotos de todos os usuários; professores podem ver a própria foto e as fotos dos alunos das turmas às quais estão associados; cada aluno pode ver a própria foto. Não haverá ação independente para remover uma foto; o administrador pode substituí-la na edição do perfil, removendo o arquivo anterior do armazenamento ativo. Manter a foto enquanto a conta estiver ativa; ao excluir logicamente a conta, remover arquivo e metadata do armazenamento ativo |
@@ -118,6 +120,8 @@ erDiagram
         integer falhas_login_na_janela
         timestamptz inicio_janela_falhas_login
         timestamptz bloqueado_ate
+        integer contador_pedidos_redefinicao
+        timestamptz inicio_janela_redefinicao
     }
 
     SESSAO {
@@ -286,17 +290,17 @@ Fotos de perfil fazem parte da V1 e se vinculam ao usuário; o envio pela API em
 - O armazenamento em Azure Blob privado, os formatos JPEG e PNG, o limite de 5 MB, a matriz de acesso e o ciclo de vida da foto estão definidos. Não existe remoção manual da foto; administrador pode substituí-la na edição do perfil. A foto permanece enquanto a conta estiver ativa e é removida do armazenamento ativo quando substituída ou quando a conta é excluída logicamente.
 
 - Definir como alunos que ingressaram depois de um simulado participarão dos cálculos de média em versões futuras.
-- A matriz física ainda precisa de revisão final do DDL; as regras de distribuição de pesos já estão definidas em [matriz física V1](matriz-fisica-v1.md).
+- A matriz física V1 detalha a estrutura do schema inicial. Os detalhes físicos que ainda dependem de definição estão marcados na [matriz física V1](matriz-fisica-v1.md).
 
 ## Contexto histórico
 
-Os modelos e implementações MongoDB das versões anteriores servem como referência histórica para entender requisitos, mas não definem o modelo atual por si só. Esta nova base começa vazia; não há mapeamento de ObjectIds, carga inicial, reconciliação nem plano de migração de dados MongoDB. A documentação técnica da API e as decisões aprovadas para a nova versão complementam este modelo.
+Os modelos e implementações MongoDB das versões anteriores servem como referência histórica para entender requisitos, mas não definem o modelo atual por si só. Esta nova base começa vazia; não há mapeamento de ObjectIds, carga inicial, reconciliação nem plano de migração de dados MongoDB. Este documento e a matriz física correspondente descrevem o modelo de dados da nova versão.
 
 ## Direção para o schema inicial
 
-Decisão aprovada em 2026-10-07: a entrega inicial do schema cobre todas as tabelas da V1, inclusive as usadas por subversões posteriores da V1; presença, importação de Excel e notificações ficam fora por serem V2. As tabelas serão entregues no mesmo conjunto inicial, organizadas em migrations Knex menores por assunto. O primeiro administrador será provisionado por seed manual e controlado, sem credenciais fixas no repositório, com senha em Argon2id e recusa se já houver administrador ativo. Isso não aprova o DDL final nem autoriza, por si só, o início da implementação.
+O schema inicial cobre todas as tabelas da V1, inclusive as usadas por subversões posteriores; presença, importação de Excel e notificações ficam fora por serem itens futuros. As tabelas são organizadas em migrations Knex por assunto. O primeiro administrador é provisionado por seed manual e controlado, sem credenciais fixas no código, com senha em Argon2id e recusa se já houver administrador ativo.
 
-## Revisão técnica em andamento — 2026-10-07
+## Regras e decisões técnicas
 
 - **Regra aprovada e representada:** usuario.tipo_perfil guarda exatamente um dos valores aluno, professor ou administrador. A restrição de valores foi aprovada.
 - **Integridade de perfil aprovada:** as extensões ALUNO e PROFESSOR devem corresponder a usuario.tipo_perfil; criar o usuário e sua extensão na mesma transação. A técnica de constraint será definida no DDL.
@@ -306,9 +310,10 @@ Decisão aprovada em 2026-10-07: a entrega inicial do schema cobre todas as tabe
 - **Ativação aprovada:** USUARIO.ativado_em é anulável; nulo indica conta pendente e a ativação grava a data e hora atuais. Quando a troca confirmada de e-mail exigir nova ativação, limpar o campo, revogar as sessões ativas e recusar logins até a reativação. Manter o hash de senha atual até a reativação ser concluída e então substituí-lo pela senha escolhida. Não manter histórico de ativações.
 - **Exclusão lógica aprovada:** USUARIO.excluido_em é anulável; preenchê-lo ao excluir logicamente aluno, professor ou administrador, sem apagar os vínculos acadêmicos. Revogar todas as sessões da conta em SESSAO.revogada_em e recusar novos logins; o prazo de retenção dos dados permanece sem definição.
 - **Bloqueio de login aprovado:** guardar em USUARIO a quantidade de falhas na janela de 15 minutos, o início da janela e o horário até o qual a conta está bloqueada. O bloqueio ocorre após 5 falhas na janela e dura 15 minutos. Após login bem-sucedido, zerar o contador e remover o bloqueio. Se a janela expirar sem bloqueio, a próxima falha inicia outra janela com contador 1; depois que um bloqueio termina, a primeira nova falha também inicia uma janela com contador 1. Não limitar tentativas de login por IP.
+- **Pedidos de redefinição de senha:** guardar em USUARIO `contador_pedidos_redefinicao` e `inicio_janela_redefinicao`, com até três pedidos por usuário em janela fixa de 24 horas iniciada no primeiro pedido. Não haverá limite por IP para esse fluxo. Após redefinição concluída ou login bem-sucedido, zerar o contador e limpar o início da janela; após 24 horas, o próximo pedido inicia uma nova janela e conta como o primeiro. Pedidos acima do limite na janela recebem a mesma resposta genérica `200 OK`, sem envio de novo e-mail e sem revelar se a conta existe ou está ativa. Os dois campos e a regra de valor não negativo constam da matriz física. O limite máximo de três é aplicado pela API; a atualização conjunta é atômica sob concorrência. Não criar tabela de log ou histórico para essa contagem.
 - **Regra física aprovada:** vincular cada resultado ao participante e à matéria do mesmo simulado por chaves estrangeiras compostas que incluam o identificador do simulado.
 - **Tipos aprovados:** `objetivo` e `dissertativo`; a representação física (CHECK, enum ou tabela de referência) será definida na implementação do schema.
-- **Estratégias físicas aprovadas:** impor a correspondência entre tipo_perfil e ALUNO/PROFESSOR com FKs compostas e constraint triggers adiadas ao fim da transação; armazenar sessões no PostgreSQL com hash único, validade e revogação; armazenar tokens com hash e validade, removendo os registros usados/invalidados e limpando expirados diariamente; guardar os arquivos de foto em container privado do Azure Blob Storage e sua chave, tipo de mídia, tamanho e datas no PostgreSQL. **Especificação física aguardando revisão final:** consultar a [matriz física V1](matriz-fisica-v1.md). Formatos JPEG/PNG e limite de 5 MB estão aprovados.
+- **Estratégias físicas adotadas:** impor a correspondência entre tipo_perfil e ALUNO/PROFESSOR com FKs compostas e constraint triggers adiadas ao fim da transação; armazenar sessões no PostgreSQL com hash único, validade e revogação; armazenar tokens com hash e validade, removendo os registros usados/invalidados e limpando expirados diariamente; guardar os arquivos de foto em container privado do Azure Blob Storage e sua chave, tipo de mídia, tamanho e datas no PostgreSQL. A estrutura do schema inicial segue a matriz física V1. A constraint da cota impede valores negativos; a API aplica o máximo de três pedidos. Formatos JPEG/PNG e limite de 5 MB são os parâmetros definidos para fotos.
 - **Escopo inicial aprovado:** incluir todas as tabelas da V1 no primeiro conjunto de schema, em migrations por assunto; excluir as entidades de presença, importação de Excel e notificações da V2.
 - **Seed do primeiro administrador aprovado:** execução manual/controlada, sem credenciais fixas no repositório, senha protegida por Argon2id e recusa quando já houver administrador ativo. A forma operacional concreta será detalhada no escopo de implementação.
 
@@ -317,5 +322,4 @@ Decisão aprovada em 2026-10-07: a entrega inicial do schema cobre todas as tabe
 - **Senha de teste do seed:** uma senha genérica poderá ser usada somente em testes isolados; essa permissão não se aplica a ambientes locais compartilhados, homologação ou produção. Fora de testes, não haverá valor padrão ou senha fixa no repositório; o fornecimento será detalhado no escopo de implementação.
 - **Troca de e-mail:** guardar o novo endereço em `USUARIO.email_pendente`; enquanto aguarda confirmação, a conta não aceita login e `ativado_em` fica nulo. O endereço atual só é substituído após confirmação pelo fluxo de ativação. A unicidade deve cobrir endereços atuais e pendentes com proteção contra concorrência no banco.
 - **Correção de ausência:** somente o administrador pode alterar um resultado de ausente para avaliado. Não será mantido histórico ou registro de auditoria das alterações de resultados.
-- **Diretrizes físicas aprovadas; matriz aguardando revisão final:** tipos, nulabilidade, padrões, chaves, constraints e índices estão detalhados na matriz física. Usar `BIGINT IDENTITY` para IDs internos, `DATE` para datas acadêmicas, `TIMESTAMPTZ` para instantes, `NUMERIC` para pesos com validação de faixa, `TEXT` com `CHECK` para valores finitos e FKs restritivas sem exclusão em cascata. A regra de distribuição de pesos foi definida; ainda falta revisar e aprovar o DDL proposto.
-- **Seed do primeiro administrador:** ficará em uma pasta `seed/` no repositório da API e será criado na Fase 1 da nova entrega de domínio. Permanecem as regras aprovadas: execução manual/controlada, sem credenciais fixas no repositório, hash Argon2id e recusa se já existir administrador ativo. O modo de fornecer a senha será detalhado no escopo da fase.
+- **Diretrizes físicas:** tipos, nulabilidade, padrões, chaves, constraints e índices estão detalhados na matriz física. Usar `BIGINT IDENTITY` para IDs internos, `DATE` para datas acadêmicas, `TIMESTAMPTZ` para instantes, `NUMERIC` para pesos com validação de faixa, `TEXT` com `CHECK` para valores finitos e FKs restritivas sem exclusão em cascata. A matriz física V1 serve de referência para o schema inicial.

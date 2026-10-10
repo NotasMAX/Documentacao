@@ -1,10 +1,9 @@
 # Matriz física inicial — V1
 
-**Estado:** rascunho para revisão; não autoriza migrations ou alteração de código.
-**Atualizado em:** 2026-10-07
+**Atualizado em:** 2026-10-10
 **Escopo:** tabelas de domínio e suporte necessárias à V1; presença, importação Excel e notificações da V2 ficam fora.
 
-Esta matriz traduz as decisões registradas no [modelo conceitual](README.md) e as definições aprovadas para a V1 em uma proposta PostgreSQL, distinguindo regras aprovadas de escolhas técnicas ainda propostas. Campos marcados como pendentes precisam ser resolvidos antes de congelar o DDL.
+Esta matriz traduz as decisões registradas no [modelo conceitual](README.md) e as definições para a V1 em uma proposta PostgreSQL, distinguindo regras definidas de escolhas técnicas ainda propostas. A matriz serviu de base para o schema inicial; itens marcados como pendentes continuam sem decisão e precisam ser resolvidos antes de qualquer mudança correspondente no DDL.
 
 ## Convenções físicas
 
@@ -32,10 +31,12 @@ Esta matriz traduz as decisões registradas no [modelo conceitual](README.md) e 
 | `falhas_login_na_janela` | `INTEGER` | NN / `0` | `CHECK >= 0` | Bloqueio por conta aprovado |
 | `inicio_janela_falhas_login` | `TIMESTAMPTZ` | NULL / `NULL` | Início da janela de 15 min | Regra aprovada |
 | `bloqueado_ate` | `TIMESTAMPTZ` | NULL / `NULL` | Bloqueio temporário após 5 falhas | Regra aprovada |
+| `contador_pedidos_redefinicao` | `INTEGER` | NN / `0` | `usuario_contador_pedidos_redefinicao_ck CHECK (contador_pedidos_redefinicao >= 0)`; até três pedidos por usuário em janela fixa de 24 horas iniciada no primeiro pedido; sem limite por IP neste fluxo. A constraint só impede valor negativo; a API aplica o máximo de três. Zerar junto com `inicio_janela_redefinicao` após redefinição concluída ou login bem-sucedido. Pedido excedente mantém resposta genérica `200 OK` e não envia e-mail. Incremento e abertura da janela atômicos sob concorrência. | Campo e constraint incluídos no schema inicial; máximo de três aplicado pela API |
+| `inicio_janela_redefinicao` | `TIMESTAMPTZ` | NULL / `NULL` | Instante do primeiro pedido contabilizado na janela fixa de 24 horas; limpar junto com o contador após redefinição concluída ou login bem-sucedido. | Campo incluído no schema inicial |
 
 **Índices e integridade:** `UNIQUE(email_institucional)`; índice único parcial em `email_pendente` quando não nulo; verificação transacional no banco para impedir colisão cruzada entre endereços atuais e pendentes, inclusive em alterações concorrentes. Índice para listagens administrativas por perfil/nome, restrito a usuários não excluídos. Não indexar campos de bloqueio sem evidência de consulta.
 
-Ao iniciar a troca, `ativado_em` fica nulo e a conta não aceita login. O endereço atual permanece até a confirmação do novo endereço pelo fluxo de ativação; então `email_pendente` substitui `email_institucional`, volta a NULL e a conta é ativada. As sessões são revogadas após a confirmação. A verificação de unicidade cruzada será protegida por mecanismo transacional no banco.
+Ao iniciar a troca, `ativado_em` fica nulo e a conta não aceita login. O endereço atual permanece até a confirmação do novo endereço pelo fluxo de ativação; então `email_pendente` substitui `email_institucional`, volta a NULL e a conta é ativada. As sessões são revogadas após a confirmação. A unicidade cruzada será protegida por função/trigger no banco com advisory transaction locks sobre e-mails normalizados, adquiridos em ordem estável, e verificação conjunta de e-mails atuais e pendentes.
 
 ## 2. `aluno` e `professor`
 
@@ -191,7 +192,7 @@ PK aprovada: `(id_simulado, id_usuario_aluno, id_turma, id_materia)`. FKs compos
 
 ## Estado da matriz
 
-As decisões de domínio que impediam fechar a matriz foram respondidas. O peso é armazenado como proporção decimal e apresentado como percentual; a soma é controlada por turma, matéria e bimestre, com distribuição parcial até 100% e sem peso zero. A matriz está pronta para revisão final do DDL, mas ainda não é schema físico aprovado para migrations.
+O peso é armazenado como proporção decimal e apresentado como percentual; a soma é controlada por turma, matéria e bimestre, com distribuição parcial até 100% e sem peso zero. Esta matriz descreve a estrutura física de referência para o schema V1. As migrations devem preservar as regras e constraints aqui descritas; alterações de regra ou estrutura precisam ser revisadas antes de serem aplicadas.
 
 O seed de teste poderá usar uma senha genérica somente em ambiente de teste isolado. A forma de fornecer a senha inicial do administrador em produção fica pendente para a versão final. A definição formal do escopo e da etapa de implementação continua pendente.
 
