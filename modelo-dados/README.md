@@ -2,7 +2,7 @@
 
 ## Objetivo e estado
 
-**Atualizado em:** 2026-10-10
+**Atualizado em:** 2026-10-12
 
 Este documento descreve o modelo conceitual da nova versão. As versões web e mobile dos semestres 4 e 5 utilizaram MongoDB/NoSQL; a nova versão terá PostgreSQL como requisito, começará com a base vazia e não migrará registros do MongoDB.
 
@@ -16,8 +16,12 @@ Os diagramas são conceituais. A [matriz física inicial — V1](matriz-fisica-v
 - USUARIO armazena nome completo, e-mail institucional e telefone de contato; o telefone é opcional para todos os perfis. ALUNO armazena também o telefone obrigatório do responsável.
 - O e-mail institucional é convertido para minúsculas antes de armazenar e comparar; sua unicidade vale entre todas as contas.
 - Uma matéria pode ser oferecida em uma turma por meio de turma_disciplina.
-- Cada matéria/turma pode ter vários professores. turma_disciplina_professor representa apenas a associação atual; não haverá histórico de atribuições.
+- Nome da matéria é obrigatório e limitado a 120 caracteres; descrição é opcional e limitada a 500 caracteres. Esses limites são validações da API; as colunas físicas permanecem `TEXT`.
+- Turmas não são excluídas logicamente: o encerramento é feito somente pelo fechamento explícito. Todas as turmas cadastradas são preservadas, e a combinação série/ano é única sem índice parcial. O campo `turma.excluido_em` não faz parte do modelo-alvo.
+- Cada matéria/turma pode ter vários professores. `turma_disciplina_professor` representa apenas as associações atuais, sem data de vigência individual, término programado ou histórico de atribuições. A elegibilidade deriva da associação e do estado/ano da turma. Desassociar remove fisicamente o vínculo.
+- A turma possui início (`inicio_em DATE`), exposto pela API como `startDate` (`YYYY-MM-DD`), hoje ou futuro e pode ser fechada após confirmação, inclusive antes do início, com `fechada_em TIMESTAMPTZ NULL`. Fechar torna seus vínculos inelegíveis por derivação do estado da turma, sem alterar as linhas de matrícula ou de associação. A matrícula não pode começar antes da maior data entre hoje em `America/Sao_Paulo` e o início da turma; seu cancelamento é recusado após o fechamento. Não há reabertura/restauração nesta entrega; não existem linhas para backfill.
 - Na criação do simulado, a lista inicial contém as matérias oferecidas pela turma selecionada. O administrador pode remover matérias e restaurar a lista completa. A seleção não apresenta professores. O simulado só pode ser salvo se houver ao menos uma matéria selecionada.
+- Para remover uma matéria de uma oferta: simulado com `instante_confirmacao_realizacao` preenchido bloqueia a operação; simulado não confirmado e não cancelado que já possua qualquer resultado também bloqueia, preservando seus dados. Se não houver resultado, a matéria pode ser retirada do simulado ativo antes da exclusão da oferta. Simulado cancelado é identificado por `excluido_em` preenchido. As alterações permitidas são atômicas.
 
 ### Matrículas e participantes
 
@@ -90,11 +94,11 @@ A estrutura abaixo registra entidades e atributos relevantes às decisões atuai
 | token_ativacao, token_redefinicao_senha | Tokens aleatórios com hash SHA-256 único e validade; guardar somente o hash. Manter um registro atual por usuário e finalidade; ao emitir outro, remover o anterior. Remover o registro no consumo e limpar expirados diariamente, sem histórico de tokens. Redefinição só emite token para conta ativada; conta pendente segue pelo fluxo de ativação. |
 | foto_perfil | Metadata no PostgreSQL (chave do objeto, tipo de mídia, tamanho e datas) e arquivo em container privado do Azure Blob Storage; formatos JPEG/PNG e limite de 5 MB aprovados. Administradores podem ver fotos de todos os usuários; professores podem ver a própria foto e as fotos dos alunos das turmas às quais estão associados; cada aluno pode ver a própria foto. Não haverá ação independente para remover uma foto; o administrador pode substituí-la na edição do perfil, removendo o arquivo anterior do armazenamento ativo. Manter a foto enquanto a conta estiver ativa; ao excluir logicamente a conta, remover arquivo e metadata do armazenamento ativo |
 | aluno, professor | Extensões 1:1 com USUARIO para dados e vínculos próprios; ALUNO inclui telefone obrigatório do responsável |
-| materia | Matérias cadastradas |
-| turma | Série e ano letivo |
+| materia | Nome obrigatório (até 120 caracteres), descrição opcional (até 500 caracteres) e exclusão lógica; limites aplicados pela API; colunas `TEXT` |
+| turma | Série e ano letivo; `inicio_em DATE` e `fechada_em TIMESTAMPTZ NULL`; unicidade normal da combinação série/ano; fechamento torna vínculos inelegíveis sem atualizá-los; todos os registros de turma são preservados |
 | matricula | Vínculo do aluno com período de validade |
 | turma_disciplina | Matéria oferecida em uma turma |
-| turma_disciplina_professor | Professores associados atualmente à oferta |
+| turma_disciplina_professor | Professores associados atualmente à oferta, sem datas individuais de vigência e sem histórico |
 | simulado | Número, tipo, bimestre, data marcada e instante de confirmação da realização |
 | simulado_disciplina | Matéria selecionada, total de questões e peso |
 | simulado_aluno | Participante elegível congelado na ocorrência |
@@ -272,7 +276,9 @@ classDiagram
     SimuladoDisciplina "1" --> "0..*" Resultado : avaliada
 
     note for Usuario "tipoPerfil aceita aluno, professor ou administrador. ALUNO e PROFESSOR são extensões 1:1, devem corresponder ao tipo e são criados na mesma transação do usuário. ADMINISTRADOR fica representado em USUARIO."
-    note for TurmaDisciplinaProfessor "Pode haver varios professores; nao ha historico."
+    note for Materia "Nome obrigatório até 120 caracteres; descrição opcional até 500. Limites validados pela API."
+    note for Turma "inicio_em DATE; fechada_em TIMESTAMPTZ NULL indica fechamento sem reabertura nesta entrega. Vínculos da turma fechada ficam inelegíveis sem alteração das linhas. Não existe exclusão lógica de turma; registros são preservados e serie/ano tem unicidade normal."
+    note for TurmaDisciplinaProfessor "Pode haver vários professores; a associação não possui data individual de vigência, término programado ou histórico; desassociar remove a linha atual."
     note for Simulado "Numero unico por turma e ano letivo, sem depender do bimestre."
     note for SimuladoAluno "Elegibilidade congelada pela matricula vigente na data do simulado."
     note for Resultado "Estados: pendente, avaliado ou ausente. Ausencia explicita conta como zero; ausencia de registro nao equivale a ausente."

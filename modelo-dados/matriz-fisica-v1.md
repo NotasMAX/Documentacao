@@ -1,6 +1,6 @@
 # Matriz física inicial — V1
 
-**Atualizado em:** 2026-10-10
+**Atualizado em:** 2026-10-12
 **Escopo:** tabelas de domínio e suporte necessárias à V1; presença, importação Excel e notificações da V2 ficam fora.
 
 Esta matriz traduz as decisões registradas no [modelo conceitual](README.md) e as definições para a V1 em uma proposta PostgreSQL, distinguindo regras definidas de escolhas técnicas ainda propostas. A matriz serviu de base para o schema inicial; itens marcados como pendentes continuam sem decisão e precisam ser resolvidos antes de qualquer mudança correspondente no DDL.
@@ -9,7 +9,7 @@ Esta matriz traduz as decisões registradas no [modelo conceitual](README.md) e 
 
 - Nomes de tabela e coluna em `snake_case`; são nomes propostos para o schema.
 - Entidades independentes usam `BIGINT IDENTITY`. Extensões 1:1 compartilham a chave do usuário; tabelas de associação e snapshots usam chaves compostas quando a combinação identifica naturalmente a linha.
-- Datas acadêmicas e períodos usam `DATE`; instantes de evento usam `TIMESTAMPTZ` e são enviados/tratados em UTC.
+- Datas acadêmicas e períodos usam `DATE`; na API, valores JSON são `YYYY-MM-DD`, sem horário nem offset, e comparações civis usam `America/Sao_Paulo`. Instantes de evento usam `TIMESTAMPTZ` e são enviados/tratados em UTC.
 - Estados e tipos finitos usam `TEXT` com `CHECK`; valores permitidos são comparados em minúsculas.
 - FKs usam `ON DELETE RESTRICT`; os fluxos aprovados usam exclusão lógica onde indicado e operações transacionais para remover relações permitidas.
 - Não criar tabelas de log ou histórico de alterações de resultado. `ativado_em`, `cancelada_em` e `instante_confirmacao_realizacao` representam o estado/instante de negócio aprovado, não um histórico de eventos.
@@ -59,8 +59,8 @@ Campos pessoais da V1 confirmados: nome completo, e-mail institucional e telefon
 | Campo | Tipo proposto | Nulo / padrão | Chave e regra | Estado |
 |---|---|---|---|---|
 | `id_materia` | `BIGINT IDENTITY` | NN / gerado | PK | Convenção aprovada |
-| `nome` | `TEXT` | NN / — | Duplicidade de matérias ativas bloqueada; nome reutilizável após exclusão lógica | Regra aprovada; comparar sem diferenciar caixa ou espaços externos, mantendo acentos significativos |
-| `descricao` | `TEXT` | NULL / `NULL` | Sem constraint de conteúdo definida | Opcional aprovado |
+| `nome` | `TEXT` | NN / — | Até 120 caracteres na API; duplicidade de matérias ativas bloqueada; nome reutilizável após exclusão lógica | Limite validado pela API; comparar sem diferenciar caixa ou espaços externos, mantendo acentos significativos |
+| `descricao` | `TEXT` | NULL / `NULL` | Até 500 caracteres na API | Opcional; limite validado pela API |
 | `excluido_em` | `TIMESTAMPTZ` | NULL / `NULL` | Exclusão lógica | Regra aprovada |
 
 **Índice aprovado:** unicidade de matérias ativas por `lower(btrim(nome))`, com predicado `excluido_em IS NULL`; preservar a grafia exibida em `nome`. A comparação ignora caixa e espaços externos, mas considera acentos diferentes.
@@ -70,10 +70,14 @@ Campos pessoais da V1 confirmados: nome completo, e-mail institucional e telefon
 | Campo | Tipo proposto | Nulo / padrão | Chave e regra | Estado |
 |---|---|---|---|---|
 | `id_turma` | `BIGINT IDENTITY` | NN / gerado | PK | Convenção aprovada |
-| `serie` | `INTEGER` | NN / — | `CHECK (serie IN (1, 2, 3))`; `UNIQUE (serie, ano_letivo)` | Série e unicidade aprovadas |
-| `ano_letivo` | `INTEGER` | NN / — | `UNIQUE (serie, ano_letivo)` | Campo aprovado |
+| `serie` | `INTEGER` | NN / — | `CHECK (serie IN (1, 2, 3))`; unicidade normal da combinação com `ano_letivo` | Série e regra de unicidade definidas |
+| `ano_letivo` | `INTEGER` | NN / — | Participa da restrição única normal da combinação série/ano letivo | Campo definido |
+| `inicio_em` | `DATE` | NN / informado pelo administrador | A turma pode começar hoje ou em data futura; API recebe e retorna `startDate` no formato `YYYY-MM-DD`; referência para início dos vínculos e cálculo do ano atual | Campo aprovado para a ampliação do ciclo de turma |
+| `fechada_em` | `TIMESTAMPTZ` | NULL / `NULL` | Instante do fechamento; preenchido significa fechada. Não pode ser reaberta nesta entrega | Campo aprovado para fechamento; persistência UTC |
 
-Não foi aprovado campo de exclusão lógica de turma; a API bloqueia edição de série/ano quando há vínculos. Na V1, a turma terá somente série e ano letivo; não haverá turno, nome adicional ou outro campo complementar.
+Turmas não são excluídas logicamente. O encerramento é feito pelo fechamento explícito, com `fechada_em TIMESTAMPTZ NULL`; uma turma fechada não aceita novos vínculos e os vínculos que a referenciam ficam inelegíveis por derivação do estado, sem atualizar suas linhas. Todos os registros de turma são preservados. A combinação série/ano letivo tem unicidade normal, sem índice parcial e sem coluna `excluido_em`. A turma também possui `inicio_em DATE`. Não existem turmas no banco-alvo, portanto não há backfill. Reabertura/restauração fica fora deste modelo atual. Série e ano letivo continuam sem turno, nome adicional ou outro campo complementar.
+
+**Restrição de unicidade:** `UNIQUE (serie, ano_letivo)` para todas as turmas cadastradas.
 
 ## 5. `matricula`
 
@@ -88,6 +92,8 @@ Não foi aprovado campo de exclusão lógica de turma; a API bloqueia edição d
 
 **Índices e integridade aprovados:** busca por aluno e turma; índice único parcial em `id_usuario_aluno` para matrícula sem `fim_vigencia`, evitando duas matrículas abertas do mesmo aluno. Para criar ou alterar matrícula, a API bloqueia a linha do aluno dentro da transação, verifica sobreposição usando intervalos `[início, fim)` e rejeita conflito antes de gravar.
 
+**Limites de vigência aprovados:** `inicio_vigencia` não pode ser anterior à maior data entre o dia atual em `America/Sao_Paulo` e `turma.inicio_em`. O cancelamento de uma matrícula é recusado depois que sua turma estiver fechada, sem alterar o período armazenado.
+
 ## 6. `turma_disciplina` e `turma_disciplina_professor`
 
 | Tabela | Campo | Tipo proposto | Nulo / padrão | Chave e regra | Estado |
@@ -100,7 +106,7 @@ Não foi aprovado campo de exclusão lógica de turma; a API bloqueia edição d
 | `turma_disciplina_professor` | `id_usuario_professor` | `BIGINT` | NN / — | FK para `professor(id_usuario)` | Associação atual |
 | `turma_disciplina_professor` | par oferta/professor | — | — | PK composta; não manter histórico | Vários professores e ausência de histórico aprovados |
 
-Ao remover a oferta de uma matéria da turma, a API remove também, na mesma transação, as associações atuais dessa oferta com professores. Os cadastros dos professores são preservados e não se mantém histórico. Simulados futuros devem ser atualizados para retirar a matéria antes da remoção; simulado realizado bloqueia a remoção conforme a regra aprovada.
+Ao remover a oferta de uma matéria da turma, a API remove também, na mesma transação, as associações atuais dessa oferta com professores. Os cadastros dos professores são preservados e não se mantém histórico. A associação não possui data de vigência individual nem término programado; sua elegibilidade deriva da associação atual e do estado/ano da turma. Desassociar remove fisicamente o vínculo atual. O estado fechado da turma torna a associação inelegível sem atualizar essa linha. Simulado realizado é identificado por `instante_confirmacao_realizacao` preenchido e bloqueia a remoção. Simulado cancelado é identificado por `excluido_em` preenchido. Simulado ativo ainda não confirmado e sem resultados pode ser atualizado para retirar a matéria antes da remoção. Se já houver qualquer resultado, preservar simulado/resultados e bloquear a remoção. Todas as alterações permitidas são atômicas.
 
 ## 7. `sessao`
 
