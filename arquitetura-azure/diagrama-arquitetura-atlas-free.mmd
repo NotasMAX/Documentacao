@@ -1,0 +1,36 @@
+flowchart TB
+    subgraph clients["Clientes"]
+        browser["Navegador"]
+        mobile["Aplicativo mobile"]
+    end
+
+    subgraph azureDev["Azure for Students"]
+        swaDev["Static Web Apps Free"]
+        subgraph vnetDev["VNet de desenvolvimento"]
+            acaDev["Container Apps Workload profiles"]
+            apiDev["API Consumption, mínimo 0 réplicas"]
+            natDev["NAT Gateway e IPv4 fixo"]
+            apiDev --> natDev
+        end
+        keyVaultDev["Key Vault"]
+        storageDev["Azure Storage Account\nBlob Storage privado\nAPI: identidade gerenciada / RBAC"]
+        acaDev -. "identidade gerenciada" .-> keyVaultDev
+    end
+
+    subgraph githubDev["GitHub"]
+        actionsDev["GitHub Actions"]
+        ghcrDev["GHCR privado"]
+        actionsDev -->|publica frontend| swaDev
+        actionsDev -->|publica imagem| ghcrDev
+    end
+
+    atlasDev[("MongoDB Atlas Free M0")]
+
+    browser -->|HTTPS| swaDev
+    browser -->|HTTPS API| apiDev
+    mobile -->|HTTPS API| apiDev
+    natDev -->|IPv4 fixo no allowlist| atlasDev
+    apiDev -. "identidade gerenciada / RBAC" .-> storageDev
+    natDev -->|firewall: IPv4 NAT| storageDev
+    ghcrDev -->|pull privado autenticado| apiDev
+    actionsDev -->|atualiza API| acaDev
