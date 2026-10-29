@@ -8,7 +8,7 @@ Documentação do Projeto Interdisciplinar (PI)
 
 Jahu, SP — 6º semestre/2026
 
-**Autores:** Amauri Barbieri Filho,  Evelyn Cassinotte, Lucas Nono, Vinícius Gimenesv e Vinícius Nascimento.
+**Autores:** Amauri Barbieri Filho,  Evelyn Cassinotte, Lucas Nono, Vinícius Gimenes e Vinícius Nascimento.
 
 <details>
   <summary><strong>📑 Sumário</strong></summary>
@@ -60,11 +60,11 @@ Desenvolver e implementar uma solução tecnológica integrada (Web e Mobile) pa
 
 O cronograma de desenvolvimento foi registrado com uso do **Jira** para melhor organização. O modelo escolhido pela equipe foi o de **prototipação**, por ser considerado mais adequado ao projeto.
 
-O wireframe e o protótipo foram desenvolvidos no **Figma**. As versões web e mobile dos semestres 4 e 5 usaram MongoDB/NoSQL e tecnologias próprias daqueles protótipos. A nova versão usa PostgreSQL para representar melhor os vínculos relacionais e apoiar consultas e relatórios.
+O wireframe e o protótipo foram desenvolvidos no **Figma**. As versões web e mobile dos semestres 4 e 5 usaram MongoDB/NoSQL e tecnologias próprias daqueles protótipos. A nova versão continua com o MongoDB/NoSQL, implementando as novas funcionalidades exigidas no semestre 6.
 
 **Stack da nova versão**
 
-- **API:** Node.js 24, TypeScript, Azure Functions v4, Knex e `pg`, com PostgreSQL.
+- **API:** Node.js 24, TypeScript, Azure Functions v4, Knex e `pg`, com MongoDB.
 - **Web:** React, Vite e TypeScript.
 - **Mobile:** a implementação ainda não começou e a tecnologia da nova versão será detalhada antes dessa etapa.
 
@@ -174,7 +174,7 @@ Um documento de requisitos descreve as funcionalidades, características e restr
 
 | RNF | Descrição |
 | --- | --- |
-| RNF 9 | A aplicação PostgreSQL, API em Node.js 24, TypeScript, Azure Functions v4, Knex e `pg`, além de frontend web em React, Vite , TypeScript  e .NET MAUI/C# (mobile).  |
+| RNF 9 | A aplicação em MongoDB, API em Node.js 24, TypeScript, Azure Functions v4, Knex e `pg`, além de frontend web em React, Vite , TypeScript  e .NET MAUI/C# (mobile).  |
 | RNF 10 | A aplicação mobile deve seguir o padrão arquitetural MVVM (Model-View-ViewModel). |
 
 ### Requisitos de Padrões
@@ -370,242 +370,38 @@ sucesso.”
 
 # 4. Modelo do banco de dados
 
-Os diagramas desta seção descrevem o domínio conceitualmente. O modelo conceitual está detalhado em [modelo-dados/README.md](modelo-dados/README.md), e a estrutura física de referência atual — tipos, chaves e restrições — está na [matriz física inicial](modelo-dados/matriz-fisica-v1.md).
-
-## Escopo e regras aprovadas
-
-O modelo contempla usuários e perfis, matérias oferecidas por turma, matrículas, simulados, participantes elegíveis e resultados. As regras de domínio aprovadas para este desenho são:
-
-- `usuario.tipo_perfil` identifica aluno, professor ou administrador. Aluno e professor possuem extensões 1:1 compatíveis com esse tipo; administrador é representado somente pelo tipo do usuário, sem tabela própria.
-- Uma matéria oferecida por uma turma pode ter mais de um professor associado. A associação representa a atribuição atual; não há histórico de professores.
-- Ao cadastrar um simulado, são apresentadas as matérias vinculadas à turma escolhida. O administrador pode remover matérias da seleção ou restaurar a lista completa. Professores não são apresentados nessa etapa.
-- O número do simulado é inteiro e único por turma e ano letivo, sem depender do bimestre. Um número removido pode ser reutilizado.
-- O bimestre é escolhido manualmente entre 1 e 4; não há datas de bimestre definidas no modelo.
-- Um simulado pode ser cadastrado com data anterior à data atual, com aviso. Os dados do simulado podem ser editados até a data de realização; as notas podem ser alteradas sem prazo final.
-- Quando o administrador confirma a realização, a lista de alunos elegíveis é congelada em uma transação com base nas matrículas vigentes na data cadastrada do simulado. O instante da confirmação é registrado separadamente da data de realização.
-- O início da matrícula é inclusivo e o fim é exclusivo: o período de vigência segue `[início, fim)`.
-- O simulado deve conter ao menos uma matéria selecionada para ser salvo.
-- Para cada participante congelado e matéria do simulado, o resultado tem estado pendente, avaliado ou ausente. Ausência é explícita; resultado inexistente não significa ausência. Nota zero é válida.
-- A nota do simulado é calculada por (acertos / total de questões) × 10; a nota calculada não é armazenada como dado independente.
-- Os pesos dos simulados são definidos por matéria e bimestre. A distribuição pode ser parcial, mas não pode ultrapassar 100%; peso zero não é permitido. Enquanto faltar percentual ou houver resultado pendente, a média é provisória e mantém os pesos originais, sem redistribuí-los. Resultado ausente contribui com zero.
-- A média do bimestre da turma é a média aritmética das médias finais dos alunos. Deve ser informado quando houver alunos com notas provisórias. Não são exibidos avisos de possível distorção por ausência ou não participação em simulados.
-
-Casos de alunos que ingressam após um simulado não geram resultado, ausência ou pendência para esse simulado. Como tratar esses alunos nos cálculos de médias ficará para versão posterior.
-
-## MER conceitual
-
-O desenho separa a oferta de matéria, as extensões de perfil, as fotos de perfil, a atribuição atual de professores e a lista congelada de participantes:
-
-~~~mermaid
-flowchart LR
-    U["USUARIO<br/>tipo_perfil: aluno, professor ou administrador"]
-    A["ALUNO<br/>extensão 1:1"]
-    P["PROFESSOR<br/>extensão 1:1"]
-    F["FOTO_PERFIL<br/>metadata"]
-    M["MATRICULA<br/>período de validade"]
-    T["TURMA<br/>série e ano letivo"]
-    MT["MATERIA"]
-    TD["TURMA_DISCIPLINA<br/>matéria oferecida"]
-    TDP["TURMA_DISCIPLINA_PROFESSOR<br/>associação atual"]
-    S["SIMULADO<br/>número, tipo, bimestre e data"]
-    SD["SIMULADO_DISCIPLINA<br/>questões e peso"]
-    SA["SIMULADO_ALUNO<br/>participante congelado"]
-    R["RESULTADO<br/>pendente, avaliado ou ausente"]
-
-    U -->|"dados específicos do perfil aluno"| A
-    U -->|"dados específicos do perfil professor"| P
-    U -->|"foto atual 1:1"| F
-    A -->|"matrícula"| M
-    T -->|"recebe"| M
-    T -->|"oferece"| TD
-    MT -->|"é oferecida em"| TD
-    TD -->|"atribuições atuais"| TDP
-    P -->|"pode lecionar em várias turmas"| TDP
-    T -->|"possui"| S
-    S -->|"contém ao menos uma matéria"| SD
-    TD -->|"matéria da turma"| SD
-    M -->|"vigente na data_realizacao"| SA
-    S -->|"confirmação congela participantes"| SA
-    A -->|"participa"| SA
-    SA -->|"tem resultado por matéria"| R
-    SD -->|"é avaliada em"| R
-~~~
-
-A matrícula vigente na `data_realizacao` determina a elegibilidade no momento da confirmação. O congelamento preserva essa lista mesmo que a situação de matrícula mude depois. O período de vigência é `[início, fim)`, com início inclusivo e fim exclusivo.
-
-## DER conceitual
-
-A tabela apresenta as entidades e responsabilidades conceituais. Tipos, chaves e restrições de referência da V1 estão definidos na matriz física inicial.
-
-| Entidade | Responsabilidade |
-| --- | --- |
-| usuario | Identidade, contato e autenticação |
-| aluno, professor | Extensões 1:1 compatíveis com `usuario.tipo_perfil` |
-| administrador | Perfil representado por `usuario.tipo_perfil`, sem tabela própria |
-| foto_perfil | Metadata da foto atual vinculada ao usuário |
-| materia | Cadastro de matérias |
-| turma | Série e ano letivo |
-| matricula | Vínculo do aluno com período de validade |
-| turma_disciplina | Matéria oferecida por uma turma |
-| turma_disciplina_professor | Associação atual, possivelmente múltipla, sem histórico |
-| simulado | Número, tipo, bimestre e data de realização |
-| simulado_disciplina | Matérias selecionadas, quantidade de questões e peso |
-| simulado_aluno | Lista congelada de participantes elegíveis |
-| resultado | Estado e desempenho do participante em uma matéria |
-
-~~~mermaid
-erDiagram
-    USUARIO ||--o| ALUNO : perfil
-    USUARIO ||--o| PROFESSOR : perfil
-    USUARIO ||--o| FOTO_PERFIL : possui
-
-    ALUNO ||--o{ MATRICULA : possui
-    TURMA ||--o{ MATRICULA : recebe
-
-    TURMA ||--o{ TURMA_DISCIPLINA : oferece
-    MATERIA ||--o{ TURMA_DISCIPLINA : compoe
-    PROFESSOR ||--o{ TURMA_DISCIPLINA_PROFESSOR : associado
-    TURMA_DISCIPLINA ||--o{ TURMA_DISCIPLINA_PROFESSOR : possui
-
-    TURMA ||--o{ SIMULADO : possui
-    SIMULADO ||--|{ SIMULADO_DISCIPLINA : contem
-    TURMA_DISCIPLINA ||--o{ SIMULADO_DISCIPLINA : pode_ser_selecionada
-
-    SIMULADO ||--o{ SIMULADO_ALUNO : congela_elegiveis
-    ALUNO ||--o{ SIMULADO_ALUNO : participante
-    SIMULADO_ALUNO ||--o{ RESULTADO : recebe
-    SIMULADO_DISCIPLINA ||--o{ RESULTADO : materia_avaliada
-
-    SIMULADO {
-        integer numero
-        integer bimestre
-        date data_realizacao
-        timestamptz instante_confirmacao_realizacao
-    }
-
-    MATRICULA {
-        date inicio_vigencia
-        date fim_vigencia
-    }
-
-    SIMULADO_DISCIPLINA {
-        integer total_questoes
-        decimal peso
-    }
-
-    RESULTADO {
-        integer acertos
-
-        string status_resultado
-    }
-~~~
-
-Cada participante congelado tem um resultado por matéria do simulado; cada combinação participante/matéria tem no máximo um resultado e começa pendente. A nota é calculada por `(acertos / total de questões) × 10` e não é armazenada como dado independente. Ausência é explícita e contribui com zero; resultado inexistente não equivale a ausência. Nota zero é válida. O estado de notificação não faz parte do resultado acadêmico.
+Os diagramas de modelagem de banco de dados com tabelas com relacionamentos não se aplicam a esse projeto pois estamos usando um banco de dados não relacional (MongoDB), portanto não há modelo com as tabelas, o banco de dados do projeto é dividido em coleções.
 
 ## Fotos e presença
 
-Fotos de perfil fazem parte da V1 e são vinculadas ao usuário em relação 1:1. A metadata fica no PostgreSQL e o arquivo em um container privado do Azure Blob Storage. São aceitos JPEG e PNG, com limite de 5 MB. Administradores podem ver as fotos de todos os usuários; professores podem ver a própria foto e as dos alunos das turmas às quais estão associados; cada aluno pode ver a própria foto. Não há remoção independente: o administrador pode substituir a foto na edição do perfil, removendo o arquivo anterior do armazenamento ativo. Ao excluir logicamente uma conta, a foto e sua metadata são removidas do armazenamento ativo. O registro e a consulta de presença foram adiados para a V2 e não fazem parte do modelo V1.
+Fotos de perfil fazem parte do projeto e são vinculadas ao usuário. A metadata fica no MongoDB e o arquivo em um container privado do Azure Blob Storage. São aceitos JPEG e PNG, com limite de 5 MB. Administradores podem ver as fotos de todos os usuários; professores podem ver a própria foto e as dos alunos das turmas às quais estão associados; cada aluno pode ver a própria foto. Não há remoção independente: o administrador pode substituir a foto na edição do perfil, removendo o arquivo anterior do armazenamento ativo. Ao excluir logicamente uma conta, a foto e sua metadata são removidas do armazenamento ativo. O registro da presença será feita pelo IOT e a consulta pode ser feita pelo usuario administrador.
 
 ---
 
 # 5. Banco de dados
 
-PostgreSQL é o banco de dados obrigatório da nova versão. A base começa vazia e não receberá migração de registros anteriores. A estrutura física de referência da V1 está descrita na matriz física inicial.
+Optamos pelo uso de um banco de dados não relacional (MongoDB) por garantir persistência e integridade dos dados em todas as fases da aplicação. O uso do MongoDB permite estruturar e relacionar as informações de forma consistente e bem-organizada, tornando o sistema mais seguro e confiável.
 
 ---
 
 # 6. Diagrama de classes
 
-O diagrama representa as regras conceituais da seção 4 e usa `BIGINT` nos identificadores conforme a convenção aprovada para a estrutura física V1. As demais definições de tipos, chaves e restrições constam na matriz física inicial.
-
-~~~mermaid
-classDiagram
-    class Usuario {
-        +BIGINT idUsuario
-        +String tipoPerfil
-    }
-
-    class Aluno
-    class Professor
-    class FotoPerfil {
-        +BIGINT idUsuario
-        +String chaveObjeto
-        +String tipoMidia
-        +Integer tamanhoBytes
-    }
-
-    class Materia {
-        +BIGINT idMateria
-        +String nome
-    }
-
-    class Turma {
-        +BIGINT idTurma
-        +Integer serie
-        +Integer anoLetivo
-    }
-
-    class Matricula {
-        +Date inicioVigencia
-        +Date fimVigencia
-    }
-
-    class TurmaDisciplina
-    class TurmaDisciplinaProfessor
-
-    class Simulado {
-        +BIGINT idSimulado
-        +Integer numero
-        +String tipo
-        +Integer bimestre
-        +Date dataRealizacao
-        +DateTime instanteConfirmacaoRealizacaoUtc
-    }
-
-    class SimuladoDisciplina {
-        +Integer totalQuestoes
-        +Decimal peso
-    }
-
-    class SimuladoAluno
-    class Resultado {
-        +Integer acertos
-
-        +String statusResultado
-    }
-
-    Usuario <|-- Aluno
-    Usuario <|-- Professor
-    Usuario "1" --> "0..1" FotoPerfil : possui foto atual
-
-    Aluno "1" --> "0..*" Matricula : possui
-    Turma "1" --> "0..*" Matricula : recebe
-    Turma "1" --> "0..*" TurmaDisciplina : oferece
-    Materia "1" --> "0..*" TurmaDisciplina : compoe
-    Professor "1" --> "0..*" TurmaDisciplinaProfessor : leciona
-    TurmaDisciplina "1" --> "0..*" TurmaDisciplinaProfessor : associacao atual
-
-    Turma "1" --> "0..*" Simulado : possui
-    Simulado "1" --> "1..*" SimuladoDisciplina : contem
-    TurmaDisciplina "1" --> "0..*" SimuladoDisciplina : pode ser selecionada
-    Simulado "1" --> "0..*" SimuladoAluno : congela elegiveis
-    Aluno "1" --> "0..*" SimuladoAluno : participa
-    SimuladoAluno "1" --> "0..*" Resultado : recebe por materia
-    SimuladoDisciplina "1" --> "0..*" Resultado : avaliada
-
-    note for Usuario "tipoPerfil aceita aluno, professor ou administrador. Aluno e professor são extensões 1:1; administrador fica representado em Usuario."
-    note for FotoPerfil "Metadata no PostgreSQL; arquivo no Azure Blob Storage privado. Uma foto atual por usuário."
-    note for TurmaDisciplinaProfessor "Pode haver varios professores; a atribuicao atual nao mantem historico."
-    note for Simulado "Numero inteiro unico por turma e ano letivo, independente do bimestre; pode ser reutilizado apos remocao."
-    note for SimuladoAluno "Participantes elegiveis sao congelados na confirmação da realização, conforme matriculas vigentes em data_realizacao; vigência [início, fim)."
-    note for Resultado "Estados: pendente, avaliado ou ausente. Ausência explícita contribui com zero; registro inexistente não significa ausência. Nota zero é válida. A nota calculada não é persistida."
-~~~
+O projeto atualmente utiliza o MongoDB, portanto um diagrama de classes não seria adequado para representar suas coleções. O diagrama de classes é mais adequado para projetos em banco de dados relacionais como MySQL e PostgreSQL.
 
 ---
 
 # 7. Estudo de viabilidade
 
-**Viabilidade técnica:** a nova versão utiliza uma API em Node.js 24, TypeScript, Azure Functions v4, Knex e `pg`, conectada ao PostgreSQL, e um frontend web em React, Vite e TypeScript. 
+**Viabilidade técnica:** 
+
+
+***Quais tecnologias e recursos são necessários para desenvolver e manter o projeto?*** 
+O sistema será desenvolvido como uma plataforma web, garantindo acesso remoto, facilidade de uso e integração com diferentes dispositivos.
+As principais tecnologias utilizadas no desenvolvimento serão HTML, TailwindCSS, JavaScript, Node.js e MongoDB, que oferecem uma estrutura moderna, segura e escalável para o projeto.
+
+***A equipe possui o conhecimento técnico necessário para implementar o projeto?*** 
+Sim. Ao longo do desenvolvimento, a equipe ampliou seus conhecimentos técnicos nas tecnologias utilizadas, o que possibilitou a implementação eficiente do projeto e a resolução de desafios de forma colaborativa. 
+
 **Viabilidade econômica:** os principais custos concentram-se na hospedagem em nuvem, já que as tecnologias utilizadas são gratuitas. Estima-se dedicação de ~4h semanais por desenvolvedor ao longo do semestre (~80h por integrante), totalizando um custo indireto estimado de ~R$ 2.000,00 por integrante e ~R$ 10.000,00 para a equipe de cinco desenvolvedores (nível júnior, R$ 25,00/hora). Não há investimento em mão de obra externa.
 
 **Viabilidade de mercado:** existe demanda constante por soluções de monitoramento de notas bimestrais, tanto pela direção escolar quanto pelos alunos. O sistema se diferencia por atender exclusivamente às necessidades do Colégio Max, com solução personalizada.
