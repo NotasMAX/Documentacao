@@ -370,7 +370,33 @@ sucesso.”
 
 # 4. Modelo do banco de dados
 
-Os diagramas de modelagem de banco de dados com tabelas com relacionamentos não se aplicam a esse projeto pois estamos usando um banco de dados não relacional (MongoDB), portanto não há modelo com as tabelas, o banco de dados do projeto é dividido em coleções.
+O modelo de dados do NotasMAX foi elaborado a partir do banco MongoDB do projeto, utilizando a exportação do MongoDB Compass. O diagrama a seguir apresenta as coleções, referências e estruturas incorporadas.
+
+```mermaid
+flowchart LR
+  usuarios["usuarios"]
+  turmas["turmas"]
+  materias["materias"]
+  turmadisciplinas["turmadisciplinas"]
+  simulados["simulados"]
+  conteudos["conteudos[] · incorporado"]
+  resultados["resultados[] · incorporado"]
+  turmas -->|"alunos[] → _id"| usuarios
+  turmadisciplinas -->|"professor_id"| usuarios
+  turmadisciplinas -->|"turma_id"| turmas
+  turmadisciplinas -->|"materia_id"| materias
+  simulados -->|"turma_id"| turmas
+  simulados -->|"contém"| conteudos
+  conteudos -->|"contém"| resultados
+  conteudos -->|"turma_disciplina_id"| turmadisciplinas
+  resultados -->|"aluno_id"| usuarios
+```
+
+O banco de dados do **NotasMAX** utiliza o MongoDB, um sistema NoSQL que organiza as informações em documentos agrupados em coleções. O modelo é composto por cinco coleções principais: **`usuarios`**, **`turmas`**, **`materias`**, **`turmadisciplinas`** e **`simulados`**. A coleção `usuarios` armazena alunos, professores e administradores; `turmas` organiza os grupos de alunos; `materias` registra as disciplinas; e `turmadisciplinas` associa turmas, professores e matérias.
+
+A coleção `simulados` reúne as avaliações, com seus conteúdos e resultados armazenados como **subdocumentos incorporados**. As ligações entre coleções são realizadas por referências **`ObjectId`**, sem chaves estrangeiras relacionais. Essa combinação de referências e incorporação permite organizar as informações acadêmicas e os resultados das avaliações de maneira coerente com o modelo documental do MongoDB.
+
+Para consultar os campos, tipos BSON e a estrutura detalhada dos documentos, acesse o [modelo de dados MongoDB completo](modelo-dados/modelo-dados-mongodb.md).
 
 ## Fotos e presença
 
@@ -380,13 +406,102 @@ Fotos de perfil fazem parte do projeto e são vinculadas ao usuário. A metadata
 
 # 5. Banco de dados
 
-Optamos pelo uso de um banco de dados não relacional (MongoDB) por garantir persistência e integridade dos dados em todas as fases da aplicação. O uso do MongoDB permite estruturar e relacionar as informações de forma consistente e bem-organizada, tornando o sistema mais seguro e confiável.
+Optamos pela utilização do **MongoDB**, um banco de dados não relacional (NoSQL), devido à sua flexibilidade, escalabilidade e capacidade de armazenar informações em documentos. Essa abordagem permite organizar os dados do NotasMAX em coleções, utilizando referências entre documentos e estruturas incorporadas para representar os relacionamentos do sistema. Além disso, o MongoDB facilita a evolução da estrutura dos dados conforme novas funcionalidades são desenvolvidas, contribuindo para a eficiência no armazenamento, na consulta e no gerenciamento das informações acadêmicas. Dessa forma, sua utilização atende às necessidades do projeto, oferecendo uma solução flexível e adequada ao funcionamento das aplicações web e mobile.
 
 ---
 
 # 6. Diagrama de classes
 
-O projeto atualmente utiliza o MongoDB, portanto um diagrama de classes não seria adequado para representar suas coleções. O diagrama de classes é mais adequado para projetos em banco de dados relacionais como MySQL e PostgreSQL.
+```mermaid
+classDiagram
+    direction LR
+    class Usuario {
+      +ObjectId _id
+      +int __v
+      +string nome
+      +string email
+      +string senha
+      +string tipo_usuario
+      +string nome_responsavel
+      +string telefone_contato
+      +string telefone_responsavel
+      +null resetToken
+      +null resetTokenExpiry
+      +date createdAt
+      +date updatedAt
+    }
+    class Turma {
+      +ObjectId _id
+      +int __v
+      +ObjectId[] alunos
+      +int ano
+      +int serie
+      +date createdAt
+      +date updatedAt
+    }
+    class Materia {
+      +ObjectId _id
+      +int __v
+      +string nome
+      +date createdAt
+      +date updatedAt
+    }
+    class TurmaDisciplina {
+      +ObjectId _id
+      +int __v
+      +ObjectId materia_id
+      +ObjectId professor_id
+      +ObjectId turma_id
+      +date createdAt
+      +date updatedAt
+    }
+    class Simulado {
+      +ObjectId _id
+      +int __v
+      +int bimestre
+      +int numero
+      +string tipo
+      +date data_realizacao
+      +ObjectId turma_id
+      +Conteudo[] conteudos
+      +date createdAt
+      +date updatedAt
+    }
+    class Conteudo {
+      +ObjectId _id
+      +int peso
+      +int quantidade_questoes
+      +ObjectId turma_disciplina_id
+      +Resultado[] resultados
+      +date createdAt
+      +date updatedAt
+    }
+    class Resultado {
+      +ObjectId _id
+      +ObjectId aluno_id
+      +int acertos
+      +int nota
+      +string notificacao_enviada
+      +date createdAt
+      +date updatedAt
+    }
+
+    Turma "0..*" --> "0..*" Usuario : alunos[]
+    TurmaDisciplina "0..*" --> "1" Materia : materia_id
+    TurmaDisciplina "0..*" --> "1" Usuario : professor_id
+    TurmaDisciplina "0..*" --> "1" Turma : turma_id
+    Simulado "0..*" --> "1" Turma : turma_id
+    Simulado "1" *-- "0..*" Conteudo : conteudos[]
+    Conteudo "1" *-- "0..*" Resultado : resultados[]
+    Conteudo "0..*" --> "1" TurmaDisciplina : turma_disciplina_id
+    Resultado "0..*" --> "1" Usuario : aluno_id
+```
+
+O diagrama de classes do **NotasMAX** representa os principais modelos de persistência do sistema, seus atributos e seus relacionamentos, com base na estrutura observada no MongoDB Compass. São sete classes: **`Usuario`**, **`Turma`**, **`Materia`**, **`TurmaDisciplina`**, **`Simulado`**, **`Conteudo`** e **`Resultado`**. `Usuario` reúne os perfis de alunos, professores e administradores; `Turma` e `Materia` organizam as informações acadêmicas; e `TurmaDisciplina` associa turma, professor e disciplina.
+
+`Simulado` contém objetos `Conteudo`, que por sua vez contêm objetos `Resultado`, representando a composição de documentos incorporados no MongoDB. As demais associações são feitas por identificadores **`ObjectId`**. Assim, o diagrama facilita a compreensão dos modelos e de suas ligações, sem representar tabelas ou chaves estrangeiras de um banco relacional.
+
+Consulte também o [diagrama de classes completo](modelo-dados/diagrama-classes-mongodb.md), com notas sobre associações e composições.
 
 ---
 
