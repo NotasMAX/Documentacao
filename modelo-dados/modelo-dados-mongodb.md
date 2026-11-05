@@ -152,7 +152,3 @@ Os tipos abaixo são os tipos BSON registrados no modelo exportado. A coluna **P
 - O arquivo `.mdm` lista `indexes: []` nas cinco coleções; portanto, não é possível concluir por essa exportação quais índices realmente existem no banco, inclusive o índice padrão de `_id`.
 - As relações do Compass estão marcadas como **inferidas**. Cardinalidades e integridade referencial precisam ser verificadas nos schemas da API e nas regras de negócio.
 - O diagrama descreve o modelo físico/documental do MongoDB e complementa, mas não substitui, o diagrama de classes UML.
-
-## Como usar na documentação
-
-Salve este arquivo em `modelo-dados/modelo-dados-mongodb.md`. O GitHub renderiza automaticamente os blocos Mermaid.

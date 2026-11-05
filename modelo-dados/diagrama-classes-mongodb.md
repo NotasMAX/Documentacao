@@ -101,5 +101,3 @@ O diagrama de classes do **NotasMAX** representa os principais modelos de persis
 - As multiplicidades das referências indicam a interpretação lógica esperada. O arquivo Compass marca os relacionamentos como **inferidos**, não como regras de integridade verificadas.
 - Os tipos são os tipos BSON identificados no arquivo `.mdm`. `resetToken` e `resetTokenExpiry` apareceram como `null` nos dados inspecionados, o que **não comprova** que esses campos aceitem somente `null` no schema da aplicação.
 - `__v` é um campo de versionamento usual do Mongoose. `createdAt` e `updatedAt` são campos de data observados nos documentos.
-
-> Este é um diagrama de classes **dos dados persistidos**, não um diagrama de todas as classes, métodos, serviços e telas da aplicação. A estrutura foi extraída do modelo do Compass, não de uma validação dos schemas atuais do código-fonte.
