@@ -1,311 +1,99 @@
-# Arquitetura Azure — NotasMAX
+# Arquitetura de nuvem — NotasMAX
 
-## 1. Objetivo
+Este documento descreve a arquitetura alvo da aplicação em desenvolvimento. O frontend web e a API são publicados juntos em um Azure Container App, para manter a solução dentro dos recursos disponíveis na assinatura de estudante e reduzir componentes separados.
 
-Este documento propõe a arquitetura de nuvem Azure para o NotasMAX, considerando o estado atual do projeto:
+O ambiente utiliza serviços gratuitos ou consumo que pode ser coberto pelo Azure for Students e pelos limites incluídos no GitHub. Gratuidade, disponibilidade regional, cotas e crédito dependem da assinatura e do uso.
 
-- frontend React/Vite;
-- backend Node.js/Express;
-- aplicativo mobile .NET MAUI;
-- persistência atual em MongoDB;
-- migração planejada para PostgreSQL;
-- autenticação própria baseada em JWT e envio de e-mail por SMTP.
+## Arquitetura alvo de desenvolvimento
 
-A recomendação é adotar serviços gerenciados (PaaS) com escala sob demanda, reduzindo a necessidade de administrar máquinas virtuais, sistema operacional e componentes de infraestrutura.
+![Diagrama da arquitetura alvo de desenvolvimento](arquitetura-azure-atlas-free.png)
 
-## 2. Decisão arquitetural
+Fonte editável: [diagrama-arquitetura-atlas-free.mmd](diagrama-arquitetura-atlas-free.mmd).
 
-| Camada | Serviço Azure | Responsabilidade |
+### Recursos configurados
+
+#### MongoDB Atlas
+
+![Visão do projeto e do cluster MongoDB Atlas](recursos-mongodb.png)
+
+#### Azure
+
+![Recursos do ambiente de desenvolvimento na assinatura Azure for Students](recursos-azure.png)
+
+| Camada | Serviço e configuração atual | Custo de referência |
 |---|---|---|
-| Web | Azure Static Web Apps | Publicar o React/Vite, HTTPS, domínio e integração com CI/CD |
-| API — recomendada | Azure Functions Flex Consumption | Executar endpoints HTTP Node.js com cobrança por execução e escala sob demanda |
-| Banco SQL | Azure Database for PostgreSQL Flexible Server | Persistir o modelo relacional do NotasMAX |
-| Runtime do Functions | Azure Storage Account | Armazenamento exigido pelo runtime do Azure Functions |
-| Segredos | Azure Key Vault | Armazenar JWT secret, credenciais SMTP e string de conexão |
-| Rede | Azure Virtual Network, Private Endpoint e Private DNS | Isolar o PostgreSQL e permitir acesso privado pela API |
-| Observabilidade | Azure Monitor, Application Insights e Log Analytics | Logs, métricas, rastreamento, alertas e diagnóstico |
-| Entrega | GitHub Actions | Validar e publicar frontend e backend |
-| Arquivos — opcional | Azure Blob Storage | Anexos, documentos ou evidências, caso essa necessidade seja incluída |
-
-O PostgreSQL foi escolhido porque o modelo SQL já documentado usa relacionamentos, chaves estrangeiras, restrições de unicidade e `timestamptz`. O Azure Database for PostgreSQL Flexible Server oferece backups configuráveis e opções de acesso privado para esse cenário.
-
-### Opções de computação
-
-| Opção | Quando usar | Custo e impacto |
-|---|---|---|
-| Functions Flex Consumption | API com baixa ou média demanda e possibilidade de refatorar o Express | Escala sob demanda; não exige instância mínima no modo On Demand |
-| Container Apps Consumption | Preservar a API Express dentro de um container | Escala até zero e cobra por uso; exige Docker e configuração de container |
-| App Service | Tráfego contínuo ou necessidade de executar o Express praticamente sem alteração | Mais simples para o código atual, mas menos adequado para custo estritamente por demanda |
-
-Para o perfil atual, a opção principal passa a ser **Azure Functions Flex Consumption**. Azure Container Apps Consumption é a alternativa de menor refatoração. Nenhuma delas torna o banco, o armazenamento, a observabilidade e a rede necessariamente gratuitos; o PostgreSQL é o principal componente a ser controlado.
-
-## 3. Arquitetura alvo
-
-```mermaid
-flowchart LR
-    Browser["Navegador"] --> SWA["Azure Static Web Apps\nReact / Vite"]
-    Mobile["Aplicativo .NET MAUI"] --> API["Azure Functions Flex Consumption\nNode.js v4 / HTTP triggers"]
-    SWA -->|HTTPS /NotasMax| API
-
-    subgraph Azure["Azure — Região principal"]
-        SWA
-        API
-        AI["Azure Monitor\nApplication Insights"]
-        KV["Azure Key Vault\nManaged Identity"]
-        ST["Storage Account\nFunctions runtime"]
+| Aplicação web e API | Um Azure Container App em ambiente Workload profiles, perfil Consumption, região Chile Central, ingress HTTPS público na porta 5000, 0,25 vCPU, 0,5 GiB e escala de zero a uma réplica. O mesmo container serve o frontend React/Vite e a API Node.js/Express. | US$ 0 enquanto o consumo permanecer nas franquias mensais do perfil Consumption; excedentes são cobrados conforme uso e região. |
+| Publicação da imagem | GitHub Actions publica uma imagem combinada no GHCR privado e atualiza o Container App por OIDC. | O armazenamento e a transferência de imagens de Container Registry estão atualmente gratuitos no GHCR. Minutos de Actions e armazenamento de artefatos seguem as cotas do plano GitHub. |
+| Banco de dados | MongoDB Atlas Free M0, cluster na AWS em São Paulo, com usuário da aplicação restrito ao banco `NotasMax`. | US$ 0 dentro dos limites do M0. |
+| Arquivos | Azure Storage Account `Standard_LRS`, camada Hot, região Chile Central; container `files` privado. O acesso da API usa identidade gerenciada e RBAC no escopo do container. | Variável conforme capacidade, operações e tráfego. A integração de arquivos ainda não é utilizada pelo fluxo atual da aplicação. |
+| Segredos | Azure Key Vault Standard, região Chile Central. A identidade gerenciada do Container App tem acesso de leitura aos segredos necessários. | Variável conforme as operações. |
 
-        subgraph VNet["Virtual Network"]
-        Integration["Subnet de integração\nFunction App"]
-            PrivateEndpoints["Private Endpoint +\nPrivate DNS"]
-            PG[("Azure Database for\nPostgreSQL Flexible Server")]
-        end
+### Comunicação e rede
 
-        API --> AI
-        API -. "segredos" .-> KV
-        API -. "runtime" .-> ST
-        API --> Integration
-        Integration --> PrivateEndpoints
-        PrivateEndpoints --> PG
-    end
-
-    Repo["GitHub\nRepositório"] --> Actions["GitHub Actions"]
-    Actions --> SWA
-    Actions --> API
-```
+O navegador abre a aplicação por HTTPS no endereço público do Container App. Frontend e API compartilham a mesma origem: a interface é servida na raiz e chama a API em `/NotasMax`. O app mobile chama o mesmo endpoint HTTPS e envia o JWT no cabeçalho `Authorization: Bearer`.
 
-### Fluxo de uma requisição
-
-1. O navegador carrega o frontend publicado no Static Web Apps.
-2. O frontend chama a API Node/Express por HTTPS.
-3. O aplicativo mobile chama a mesma API usando um endpoint HTTPS configurado por ambiente.
-4. A API obtém segredos do Key Vault por identidade gerenciada.
-5. A API acessa o PostgreSQL por rede privada, sem expor o banco à Internet.
-6. Logs, erros, métricas e traces são enviados ao Azure Monitor/Application Insights.
+O Container App usa o perfil Consumption, sem VNet própria e sem NAT Gateway. Portanto, sua saída não usa um IPv4 fixo. A lista de acesso de rede do Atlas está configurada como `0.0.0.0/0`: o endpoint aceita conexões de qualquer endereço IPv4, mas a autenticação ainda exige o usuário e a senha do banco. As conexões usam TLS. Essa configuração simplifica o ambiente de teste, mas amplia a exposição de rede. Use somente dados sintéticos, mantenha senha forte e exclusiva e não coloque credenciais no frontend, no app mobile ou no repositório.
 
-O Static Web Apps e a Function App podem ser publicados por GitHub Actions, mantendo a entrega reproduzível e auditável.
+O endpoint do Blob Storage também é público; isso permite conectividade sem VNet própria. O container `files` continua privado, o acesso anônimo está desabilitado, chaves compartilhadas estão desabilitadas e a API recebe `Storage Blob Data Contributor` somente no escopo do container. O navegador e o app mobile não acessam o Blob diretamente. Um endpoint público não concede autorização para ler ou gravar dados.
 
-## 4. Estratégia de custo sob demanda
+### Aplicação, autenticação e segredos
 
-### Desenvolvimento e homologação
+- A aplicação web e a API são entregues pela mesma imagem e pelo mesmo Container App.
+- O site usa sessão por cookie `HttpOnly`, `Secure` e `SameSite=Lax`; a API aceita também JWT Bearer para os clientes mobile.
+- `MONGODB-URI`, `JWT-SECRET` e a credencial de leitura do GHCR ficam no Key Vault e não devem ser incluídos no código-fonte ou em configurações públicas.
+- A identidade gerenciada atribuída pelo sistema ao Container App acessa os segredos do Key Vault e o container privado de arquivos por RBAC.
+- O GitHub Actions autentica no Azure por OIDC usando identidade de publicação separada, com permissão limitada à atualização do Container App.
+- O acesso ao Atlas é feito com um usuário de banco separado da conta usada para entrar no painel Atlas. A política de rede `/0` não substitui a autenticação do banco.
 
-- usar Functions Flex Consumption em modo On Demand;
-- usar Azure Database for PostgreSQL em SKU burstable;
-- programar Stop/Start do PostgreSQL fora do horário de uso;
-- manter retenção de logs curta e sampling no Application Insights;
-- não provisionar Front Door, API Management, NAT Gateway ou alta disponibilidade antes de haver necessidade;
-- usar VNet e Private Endpoint somente quando a exigência de segurança justificar o custo fixo;
-- compartilhar o mínimo possível de recursos, sem compartilhar dados entre ambientes.
-
-Quando o PostgreSQL estiver parado, a cobrança de computação é interrompida, mas armazenamento e eventuais backups continuam sendo cobrados. Essa estratégia é indicada para desenvolvimento e homologação, não para a produção que precisa responder continuamente.
+### Limitações da assinatura de estudante
 
-### Produção
+A assinatura aplica uma política de regiões e cotas próprias. A lista de regiões disponíveis pode variar por assinatura, e a presença de um serviço no catálogo não garante que ele possa ser provisionado naquela assinatura. Os recursos atualmente utilizados — ambiente e Container App, Storage Account e Key Vault — foram criados em Chile Central.
 
-- manter a Function App em Flex Consumption;
-- manter o PostgreSQL ativo, com backup e capacidade definidos pelo volume real;
-- usar VNet Integration e Private Endpoint;
-- habilitar Key Vault e Application Insights;
-- adicionar Front Door/WAF somente se o tráfego ou o risco justificarem.
+O tamanho atual de 0,25 vCPU e 0,5 GiB, com no máximo uma réplica, atende ao objetivo de demonstração e testes com baixo tráfego. O limite pode afetar a capacidade sob acessos simultâneos; a escala a zero também pode causar demora na primeira resposta após um período sem requisições. A política de regiões, as cotas de serviço e os limites do Atlas Free permanecem fora do controle da aplicação e podem mudar.
 
-O custo final deve ser calculado na região e moeda da assinatura. Os planos de Functions e Container Apps têm cobrança por execução/recursos, mas o banco, armazenamento, logs e componentes de rede podem continuar gerando custos mesmo com pouco tráfego.
+O crédito exibido no portal não elimina as políticas de região e de quota. Antes de aumentar o uso, confira no portal a oferta da assinatura, o saldo disponível e o custo estimado. Não conte com crédito como garantia de que um recurso está liberado ou de que permanecerá gratuito.
 
-## 5. Rede e segurança
+### Estimativa semanal de custo
 
-### Produção
+| Componente | Estimativa semanal | Condição ou fator de cobrança |
+|---|---:|---|
+| Azure Container Apps Consumption | US$ 0 enquanto dentro das franquias aplicáveis | Cada assinatura recebe por mês 180.000 vCPU-segundos, 360.000 GiB-segundos e 2 milhões de solicitações HTTP externas sem custo. Com 0,25 vCPU e 0,5 GiB, as franquias de CPU e memória equivalem, cada uma, a aproximadamente 200 horas de uma réplica ativa por mês (cerca de 46 horas por semana), se não forem consumidas por outras aplicações da assinatura. Quando a aplicação está em zero réplicas, não há cobrança de computação. O excedente é cobrado por consumo. |
+| MongoDB Atlas Free M0 | US$ 0 | Dentro dos limites do plano Free. O M0 tem limites próprios de capacidade, disponibilidade de regiões e recursos de rede. |
+| GHCR | US$ 0 atualmente para armazenamento e transferência de imagens de Container Registry | A política atual do GitHub informa que armazenamento e transferência do Container Registry são gratuitos. Uso do GitHub Actions e artefatos continua sujeito às cotas do plano. |
+| Azure Blob Storage | Variável; total semanal não calculado | Cobrança depende de GB armazenados por mês, operações, transferência, redundância e região. A aplicação ainda não usa o container em um fluxo de arquivos. |
+| Azure Key Vault | Variável; total semanal não calculado | Cobrança depende do número e tipo de operações. |
+| Transferência de dados | Variável; total semanal não calculado | Pode depender do volume servido aos navegadores e clientes mobile e da comunicação entre Azure Chile Central e Atlas na AWS São Paulo. |
 
-- Usar HTTPS obrigatório no Static Web Apps e na Function App.
-- Manter o endpoint da API público apenas para permitir acesso do navegador e do aplicativo mobile, protegido por autenticação, CORS restritivo e regras de acesso.
-- Desabilitar o acesso público do PostgreSQL.
-- Integrar a Function App à VNet por uma subnet dedicada quando o PostgreSQL estiver privado.
-- Conectar o PostgreSQL por Private Endpoint e resolver o endereço usando Private DNS.
-- Não publicar credenciais, JWT secret, SMTP password ou connection string no Git.
-- Conceder à Function App apenas a permissão necessária no Key Vault, usando Managed Identity.
-- Manter `Secure`, `HttpOnly` e `SameSite` adequados para cookies de autenticação quando cookies forem utilizados.
-- Remover logs que contenham senha, token, cookie ou dados pessoais desnecessários.
+**Estimativa-base:** US$ 0 por semana nas camadas com franquia ou plano gratuito, desde que os limites não sejam excedidos. O custo total não pode ser fechado sem medir armazenamento, operações do Key Vault, transferência e consumo compartilhado da assinatura. A conta de estudante pode cobrir cobranças elegíveis enquanto houver crédito aplicável, mas isso não altera as restrições de serviço e região. Esta arquitetura não inclui VNet nem NAT Gateway; portanto, não há custo semanal de NAT/IP reservado no desenho atual.
 
-O Functions VNet Integration é adequado para conexões de saída da aplicação a recursos privados. Private Endpoint é o mecanismo apropriado para conectar clientes da rede privada ao PostgreSQL sem exposição pública.
+## Referências oficiais
 
-### Desenvolvimento e homologação
+### Microsoft Azure
 
-Podem usar banco separado e regras de rede mais simples para reduzir custo e facilitar o trabalho local. Ainda assim, devem ter:
-
-- Key Vault separado ou, no mínimo, segredos separados por ambiente;
-- banco separado, sem compartilhar dados reais de produção;
-- URLs, CORS e chaves distintas;
-- dados de teste anonimizados.
-
-## 6. Organização dos ambientes
-
-Recomenda-se separar os recursos por grupo de recursos:
-
-| Ambiente | Grupo de recursos | Característica |
-|---|---|---|
-| Desenvolvimento | `rg-notasmax-dev` | Menor custo, dados fictícios e acesso controlado |
-| Homologação | `rg-notasmax-hml` | Validação de migração, integração e aceite |
-| Produção | `rg-notasmax-prod` | Rede privada, alertas, backup, domínio oficial e políticas de segurança |
-
-Cada ambiente deve ter, no mínimo, API, banco, Key Vault e configuração próprios. O frontend de produção não deve apontar para API ou banco de homologação.
-
-Domínios sugeridos:
-
-- `app.notasmax.<dominio>` para o frontend;
-- `api.notasmax.<dominio>` para a API.
-
-## 7. Migração MongoDB → PostgreSQL
-
-### Estratégia recomendada
-
-Para o projeto atual, a opção mais segura e simples é uma migração controlada com pequena janela de indisponibilidade, em vez de introduzir dual-write desde o início.
-
-1. Congelar o modelo relacional documentado.
-2. Criar o banco PostgreSQL e executar as migrations.
-3. Criar tabelas de estágio para receber a exportação do MongoDB.
-4. Exportar os documentos atuais.
-5. Transformar e carregar os dados nesta ordem:
-   `usuario`/perfis → `materia` → `turma` → `matricula` → `turma_disciplina` → `simulado` → `simulado_disciplina` → `resultado`.
-6. Manter um mapa temporário entre os `_id` do MongoDB e as chaves do PostgreSQL para auditoria e reprocessamento.
-7. Validar quantidades, chaves estrangeiras, duplicidades, notas, pesos e resultados órfãos.
-8. Colocar o sistema antigo em modo de leitura ou manutenção.
-9. Executar a carga final, alterar a configuração da API e realizar o smoke test.
-10. Manter a exportação original do MongoDB somente até a validação do rollback.
-
-### Regras que precisam ser preservadas
-
-- `email` único e normalizado;
-- perfil de usuário consistente com as tabelas `aluno`, `professor` e `administrador`;
-- um aluno não pode ter matrículas conflitantes no mesmo ano;
-- combinação turma, matéria e professor sem duplicidade;
-- unicidade de número, bimestre e turma para simulados;
-- `bimestre = 0` convertido para status de simulado agendado, conforme o modelo relacional;
-- pesos e notas validados no banco e também na API;
-- resultados sempre ligados a um aluno e a um simulado existente.
-
-## 8. Ajustes necessários no código antes do deploy
-
-O deploy Azure não deve ser feito sobre as configurações locais atuais sem esses ajustes:
-
-### Backend
-
-- substituir a URI fixa do MongoDB em `Backend/DB/conn.js` por configuração externa;
-- trocar a camada Mongoose por um driver/ORM PostgreSQL e migrations;
-- migrar `Backend/index.js` e as rotas Express para o modelo Node.js v4 do Azure Functions;
-- registrar endpoints com `app.http()` e remover `app.listen()`, que é gerenciado pelo Functions host;
-- extrair autenticação JWT, CORS, validação e tratamento de erros para módulos reutilizáveis;
-- reutilizar um pool PostgreSQL entre invocações, limitando conexões e evitando abrir uma conexão nova por requisição;
-- adicionar `GET /health` sem autenticação, retornando o estado da Function App e, opcionalmente, do banco;
-- ler JWT secret e SMTP a partir do Key Vault/Function App Configuration;
-- não executar seeds automaticamente na inicialização da produção.
-
-Se a prioridade for manter o Express quase sem refatoração, empacotar o backend em um container e usar Azure Container Apps Consumption é a alternativa indicada.
-
-### Frontend
-
-- substituir `http://localhost:5000/NotasMax` por `VITE_API_URL`;
-- configurar `VITE_API_URL` diferente para desenvolvimento, homologação e produção;
-- executar `npm run build` no pipeline;
-- validar rotas de SPA e refresh direto de páginas protegidas.
-
-### Aplicativo mobile
-
-- trocar o endpoint padrão local em `GlobalSettings.cs` por configuração de desenvolvimento e produção;
-- usar somente HTTPS em produção;
-- tratar indisponibilidade da API e expiração de token;
-- não incluir segredo de banco ou chave administrativa no aplicativo.
-
-## 9. CI/CD sugerido
-
-O pipeline deve ser dividido em duas entregas independentes:
-
-### Frontend
-
-1. instalar dependências;
-2. executar lint e build;
-3. publicar o artefato no Azure Static Web Apps;
-4. executar teste de disponibilidade da URL.
-
-### Backend
-
-1. instalar dependências;
-2. executar lint e testes;
-3. validar migrations;
-4. publicar na Function App ou no Container App;
-5. executar smoke test em `/health`;
-6. usar slots somente se o plano de Functions escolhido oferecer esse recurso; no Flex Consumption, preferir estratégia de implantação gradual compatível com o plano.
-
-Migrations destrutivas devem ser executadas em etapa explícita, com backup e aprovação, e não durante o simples start da API.
-
-## 10. Observabilidade e operação
-
-Configurar Azure Monitor/Application Insights para acompanhar:
-
-- disponibilidade do frontend e da API;
-- taxa de respostas HTTP 4xx/5xx;
-- latência por rota;
-- falhas de autenticação e envio de e-mail;
-- tempo de consulta e erros de conexão com PostgreSQL;
-- execuções, falhas, duração e concorrência da Function App;
-- armazenamento, conexões e estado do PostgreSQL;
-- execução e falha do pipeline de deploy.
-
-Alertas iniciais recomendados:
-
-- API indisponível;
-- aumento de respostas 5xx;
-- latência acima do limite definido;
-- falha de conexão com o banco;
-- espaço de armazenamento baixo;
-- falha de backup ou migration.
-
-Realizar teste periódico de restauração do banco. Backup configurado sem teste de restauração não deve ser considerado uma estratégia validada.
-
-## 11. Escopo inicial e evolução
-
-### MVP recomendado
-
-- Static Web Apps;
-- Functions Flex Consumption para a API;
-- Storage Account do runtime do Functions;
-- PostgreSQL Flexible Server;
-- Key Vault;
-- VNet + Private Endpoint para o banco;
-- Azure Monitor/Application Insights;
-- GitHub Actions;
-- sem App Service, API Management, Service Bus ou Kubernetes;
-- Container Apps Consumption como plano B se a refatoração do Express for adiada.
-
-### Evoluções condicionadas ao crescimento
-
-- Azure Front Door com WAF para proteger e distribuir o tráfego público;
-- API Management se houver múltiplas APIs, parceiros, versionamento ou necessidade de políticas centralizadas;
-- Service Bus para processamento assíncrono de e-mails e notificações;
-- Blob Storage para anexos;
-- Microsoft Entra External ID para substituir gradualmente a autenticação própria, mantendo autorização de domínio no banco;
-- réplica, alta disponibilidade e recuperação em outra região conforme RTO/RPO definidos.
-
-## 12. Critérios de aceite da arquitetura
-
-- frontend, backend e mobile conseguem acessar a API por HTTPS;
-- PostgreSQL não aceita conexões públicas em produção;
-- API acessa o banco usando segredo fora do código-fonte;
-- migrations podem ser executadas de forma repetível;
-- dados migrados passam nas validações de contagem e integridade referencial;
-- `/health` e os principais indicadores aparecem no Azure Monitor;
-- é possível restaurar um backup em ambiente de homologação;
-- um deploy com falha pode ser identificado e revertido;
-- nenhuma URL `localhost` fica configurada em produção.
-
-## 13. Referências oficiais
-
-- [Azure Static Web Apps](https://learn.microsoft.com/en-us/azure/static-web-apps/)
-- [Publicar uma aplicação React no Azure Static Web Apps](https://learn.microsoft.com/en-us/azure/static-web-apps/deploy-react)
-- [Azure Functions — referência Node.js](https://learn.microsoft.com/en-us/azure/azure-functions/functions-reference-node)
-- [Preços do Azure Functions](https://azure.microsoft.com/en-us/pricing/details/functions/)
+- [Azure for Students — condições do benefício](https://learn.microsoft.com/en-us/azure/education-hub/about-azure-for-students)
+- [Azure for Students — perguntas frequentes](https://learn.microsoft.com/en-us/azure/education-hub/faq)
+- [Regiões permitidas em assinaturas Azure for Students](https://learn.microsoft.com/en-us/answers/questions/5994269/student-subscription-restriction)
+- [Políticas e cotas de assinatura Azure](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/azure-subscription-service-limits)
+- [Cobrança do Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/billing)
+- [Escalonamento e réplicas no Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/scale-app)
+- [Identidade e segurança no Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/security)
+- [Segredos do Key Vault no Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets)
 - [Preços do Azure Container Apps](https://azure.microsoft.com/en-us/pricing/details/container-apps/)
-- [Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/overview)
-- [Recursos necessários para o Azure Functions](https://learn.microsoft.com/en-us/azure/azure-functions/functions-infrastructure-as-code)
-- [Opções de rede do Azure Functions](https://learn.microsoft.com/en-us/azure/azure-functions/functions-networking-options)
-- [Visão geral das Storage Accounts](https://learn.microsoft.com/en-us/azure/storage/common/storage-account-overview)
-- [Azure Database for PostgreSQL Flexible Server](https://learn.microsoft.com/en-us/azure/postgresql/configure-maintain/quickstart-create-server)
-- [Preços do PostgreSQL Flexible Server](https://azure.microsoft.com/en-us/pricing/details/postgresql/flexible-server/)
-- [Private Link para Azure Database for PostgreSQL](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-networking-private-link)
-- [Referências do Key Vault para App Service e Azure Functions](https://learn.microsoft.com/en-us/azure/app-service/app-service-key-vault-references)
-- [Visão geral do Azure Monitor](https://learn.microsoft.com/en-us/azure/azure-monitor/fundamentals/overview)
+- [Preços do Azure Blob Storage](https://azure.microsoft.com/en-us/pricing/details/storage/blobs/)
+- [Planejar e estimar custos do Blob Storage](https://learn.microsoft.com/en-us/azure/storage/blobs/blob-storage-estimate-costs)
+- [Autorização Blob com Microsoft Entra ID e RBAC](https://learn.microsoft.com/en-us/azure/storage/blobs/authorize-access-azure-active-directory)
+- [Preços do Azure Key Vault](https://azure.microsoft.com/en-us/pricing/details/key-vault/)
+
+### MongoDB
+
+- [Limitações do Atlas Free](https://www.mongodb.com/docs/atlas/reference/free-shared-limitations/)
+- [Lista de acesso IP do Atlas](https://www.mongodb.com/docs/atlas/security/ip-access-list/)
+- [Segurança de rede do Atlas](https://www.mongodb.com/docs/atlas/architecture/current/network-security/)
+
+### GitHub
+
+- [GitHub Container Registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
+- [Cobrança e uso de GitHub Packages](https://docs.github.com/en/billing/concepts/product-billing/github-packages)
+- [Uso incluído nos planos GitHub](https://docs.github.com/en/billing/reference/product-usage-included)
+- [Publicar imagens GHCR privadas no Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/github-actions)
+- [OpenID Connect no Azure a partir do GitHub Actions](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-azure)

@@ -1,0 +1,37 @@
+flowchart LR
+    subgraph clients["Clientes"]
+        direction TB
+        browser["Navegador"]
+        mobile["Aplicativo mobile"]
+    end
+
+    subgraph github["GitHub"]
+        direction TB
+        actions["GitHub Actions\nCI, build e deploy por OIDC"]
+        ghcr["GHCR privado\nimagem combinada"]
+        actions -->|publica imagem| ghcr
+    end
+
+    subgraph azure["Azure for Students — Chile Central"]
+        direction LR
+        subgraph acaEnv["Container Apps Environment — Workload profiles"]
+            direction TB
+            app["Container App único\nFrontend React/Vite + API Node.js/Express\nConsumption · 0,25 vCPU · 0,5 GiB\n0–1 réplica · HTTPS público"]
+        end
+
+        subgraph dataServices["Dados, arquivos e segredos"]
+            direction TB
+            keyVault["Key Vault Standard\nsegredos e credencial GHCR"]
+            storage["Blob Storage\ncontainer files privado\nendpoint público · RBAC"]
+        end
+    end
+
+    atlas[("MongoDB Atlas Free M0\nAWS São Paulo\nlista IP: 0.0.0.0/0")]
+
+    browser -->|HTTPS · frontend e API na mesma origem| app
+    mobile -->|HTTPS · API /NotasMax · Bearer JWT| app
+    actions -->|deploy da revisão por OIDC| app
+    ghcr -->|pull privado autenticado| app
+    app -->|TLS · usuário de banco| atlas
+    app -. "identidade gerenciada / RBAC" .-> keyVault
+    app -. "identidade gerenciada / RBAC" .-> storage
