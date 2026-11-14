@@ -28,30 +28,55 @@ Fonte editável: [diagrama-arquitetura-atlas-free.mmd](diagrama-arquitetura-atla
 | Arquivos | Azure Storage Account `Standard_LRS`, camada Hot, região Chile Central; container `files` privado. O acesso da API usa identidade gerenciada e RBAC no escopo do container. | Variável conforme capacidade, operações e tráfego. A integração de arquivos ainda não é utilizada pelo fluxo atual da aplicação. |
 | Segredos | Azure Key Vault Standard, região Chile Central. A identidade gerenciada do Container App tem acesso de leitura aos segredos necessários. | Variável conforme as operações. |
 
-### Comunicação e rede
+### Por que Chile Central
 
-O navegador abre a aplicação por HTTPS no endereço público do Container App. Frontend e API compartilham a mesma origem: a interface é servida na raiz e chama a API em `/NotasMax`. O app mobile chama o mesmo endpoint HTTPS e envia o JWT no cabeçalho `Authorization: Bearer`.
+Escolhemos o Chile Central pois foi a região mais próxima do banco disponivel na conta de estudante. O Azure também listava Brazil South, em São Paulo, mas o mesmo não estava disponivel para a assinatura no momento da criação dos recursos. 
 
-O Container App usa o perfil Consumption, sem VNet própria e sem NAT Gateway. Portanto, sua saída não usa um IPv4 fixo. A lista de acesso de rede do Atlas está configurada como `0.0.0.0/0`: o endpoint aceita conexões de qualquer endereço IPv4, mas a autenticação ainda exige o usuário e a senha do banco. As conexões usam TLS. Essa configuração simplifica o ambiente de teste, mas amplia a exposição de rede. Use somente dados sintéticos, mantenha senha forte e exclusiva e não coloque credenciais no frontend, no app mobile ou no repositório.
+O Atlas M0 usado pelo projeto está na AWS em São Paulo (`sa-east-1`). Assim, as chamadas da API até o banco cruzam regiões e provedores de nuvem pela rede pública, protegidas por TLS. Essa distância pode acrescentar latência e custos variáveis de transferência. 
 
-O endpoint do Blob Storage também é público; isso permite conectividade sem VNet própria. O container `files` continua privado, o acesso anônimo está desabilitado, chaves compartilhadas estão desabilitadas e a API recebe `Storage Blob Data Contributor` somente no escopo do container. O navegador e o app mobile não acessam o Blob diretamente. Um endpoint público não concede autorização para ler ou gravar dados.
+Porém a escolha atual priorizou utilizar os recursos disponiveis para a assinaturas de estudante ou gratuitos.
+
+### Como os recursos se comunicam
+
+#### Publicação da aplicação
+
+1. O GitHub Actions executa as verificações do repositório, monta uma imagem que contém o frontend e a API e publica essa imagem privada no GHCR.
+2. Para atualizar o Azure, o workflow usa OIDC e uma identidade de publicação separada. A atribuição RBAC dessa identidade limita a ação ao Container App configurado.
+3. O Container Apps busca a imagem privada no GHCR usando a credencial de pull guardada no Key Vault. Depois de atualizar a imagem, o serviço cria uma revisão da aplicação.
+
+#### Acesso pelo navegador e pelo mobile
+
+O navegador abre a aplicação por HTTPS no endereço público do Container App. O container serve a interface web na raiz e a API no caminho `/NotasMax`, sob o mesmo host. O frontend chama esse caminho; por compartilharem a origem, as chamadas web não precisam atravessar um domínio de API separado.
+
+O app mobile chama o mesmo endpoint HTTPS e envia o JWT no cabeçalho `Authorization: Bearer`. Tanto as requisições web quanto as mobile chegam ao Container App; o cliente não se conecta diretamente ao MongoDB Atlas nem ao Blob Storage.
+
+#### Acesso da API aos dados e segredos
+
+O Container App usa uma identidade gerenciada atribuída pelo sistema para acessar serviços Azure. O Azure emite tokens para essa identidade sem exigir uma senha ou chave fixa no código. A identidade tem a função `Key Vault Secrets User` no Key Vault para ler os segredos referenciados pela aplicação, e `Storage Blob Data Contributor` somente no container `files`. Ao iniciar ou atualizar a aplicação, o Container Apps usa essa identidade para resolver as referências do Key Vault e disponibilizar os segredos ao container.
+
+Com a URI obtida por meio do segredo `MONGODB-URI`, a API conecta-se ao endpoint público do Atlas usando o usuário de banco e TLS. A lista de acesso Atlas está configurada como `0.0.0.0/0`, então qualquer endereço IPv4 pode tentar chegar ao endpoint; a autenticação do banco ainda exige credenciais válidas. Isso foi necessario pois Container App não tem VNet própria nem NAT Gateway e, portanto, não possui um IP de saída fixo.
+
+O endpoint do Blob Storage é público para permitir conectividade sem VNet própria, mas o container `files` é privado e não permite leitura anônima. A identidade do Container App precisa ser autorizada pelo RBAC para acessar os blobs. O navegador e o app mobile não acessam o Blob diretamente.
 
 ### Aplicação, autenticação e segredos
 
 - A aplicação web e a API são entregues pela mesma imagem e pelo mesmo Container App.
 - O site usa sessão por cookie `HttpOnly`, `Secure` e `SameSite=Lax`; a API aceita também JWT Bearer para os clientes mobile.
 - `MONGODB-URI`, `JWT-SECRET` e a credencial de leitura do GHCR ficam no Key Vault e não devem ser incluídos no código-fonte ou em configurações públicas.
-- A identidade gerenciada atribuída pelo sistema ao Container App acessa os segredos do Key Vault e o container privado de arquivos por RBAC.
-- O GitHub Actions autentica no Azure por OIDC usando identidade de publicação separada, com permissão limitada à atualização do Container App.
+- O GitHub Actions autentica no Azure por OIDC usando identidade de publicação separada, com permissão limitada à atualização do Container App. Essa identidade de publicação não é a identidade usada pela aplicação durante a execução.
 - O acesso ao Atlas é feito com um usuário de banco separado da conta usada para entrar no painel Atlas. A política de rede `/0` não substitui a autenticação do banco.
+
+#### RBAC em termos simples
+
+Uma atribuição RBAC combina três partes: **identidade** (quem acessa), **função** (quais operações pode fazer) e **escopo** (em quais recursos a função vale). Restringir o escopo reduz o alcance de uma permissão se uma identidade for usada indevidamente.
+
+Neste ambiente, a identidade gerenciada do Container App pode ler segredos no Key Vault por meio de `Key Vault Secrets User`. No Storage, `Storage Blob Data Contributor` vale apenas para o container `files`, não para toda a assinatura nem para outros containers. A identidade de publicação do GitHub é diferente: o OIDC autentica o workflow no Azure, e a função atribuída permite atualizar o Container App. Esses acessos do Azure são independentes do controle do MongoDB Atlas, que continua usando seu usuário de banco e a própria lista de acesso de rede.
 
 ### Limitações da assinatura de estudante
 
-A assinatura aplica uma política de regiões e cotas próprias. A lista de regiões disponíveis pode variar por assinatura, e a presença de um serviço no catálogo não garante que ele possa ser provisionado naquela assinatura. Os recursos atualmente utilizados — ambiente e Container App, Storage Account e Key Vault — foram criados em Chile Central.
+A assinatura aplica uma política de regiões e cotas próprias. A lista de regiões disponíveis acaba variando por assinatura, e a presença de um serviço no catálogo não garante que ele possa ser provisionado naquela assinatura. Os recursos atualmente utilizados — ambiente e Container App, Storage Account e Key Vault — foram criados em Chile Central por esse motivo.
 
 O tamanho atual de 0,25 vCPU e 0,5 GiB, com no máximo uma réplica, atende ao objetivo de demonstração e testes com baixo tráfego. O limite pode afetar a capacidade sob acessos simultâneos; a escala a zero também pode causar demora na primeira resposta após um período sem requisições. A política de regiões, as cotas de serviço e os limites do Atlas Free permanecem fora do controle da aplicação e podem mudar.
-
-O crédito exibido no portal não elimina as políticas de região e de quota. Antes de aumentar o uso, confira no portal a oferta da assinatura, o saldo disponível e o custo estimado. Não conte com crédito como garantia de que um recurso está liberado ou de que permanecerá gratuito.
 
 ### Estimativa semanal de custo
 
@@ -74,19 +99,24 @@ O crédito exibido no portal não elimina as políticas de região e de quota. A
 - [Azure for Students — perguntas frequentes](https://learn.microsoft.com/en-us/azure/education-hub/faq)
 - [Regiões permitidas em assinaturas Azure for Students](https://learn.microsoft.com/en-us/answers/questions/5994269/student-subscription-restriction)
 - [Políticas e cotas de assinatura Azure](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/azure-subscription-service-limits)
+- [Lista de regiões Azure](https://learn.microsoft.com/en-us/azure/reliability/regions-list)
 - [Cobrança do Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/billing)
 - [Escalonamento e réplicas no Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/scale-app)
 - [Identidade e segurança no Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/security)
 - [Segredos do Key Vault no Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets)
+- [Visão geral do Azure RBAC](https://learn.microsoft.com/en-us/azure/role-based-access-control/overview)
+- [Escopo das atribuições RBAC](https://learn.microsoft.com/en-us/azure/role-based-access-control/scope-overview)
 - [Preços do Azure Container Apps](https://azure.microsoft.com/en-us/pricing/details/container-apps/)
 - [Preços do Azure Blob Storage](https://azure.microsoft.com/en-us/pricing/details/storage/blobs/)
 - [Planejar e estimar custos do Blob Storage](https://learn.microsoft.com/en-us/azure/storage/blobs/blob-storage-estimate-costs)
 - [Autorização Blob com Microsoft Entra ID e RBAC](https://learn.microsoft.com/en-us/azure/storage/blobs/authorize-access-azure-active-directory)
+- [Atribuir função de acesso a dados Blob no escopo do container](https://learn.microsoft.com/en-us/azure/storage/blobs/assign-azure-role-data-access)
 - [Preços do Azure Key Vault](https://azure.microsoft.com/en-us/pricing/details/key-vault/)
 
 ### MongoDB
 
 - [Limitações do Atlas Free](https://www.mongodb.com/docs/atlas/reference/free-shared-limitations/)
+- [Regiões AWS disponíveis no Atlas](https://www.mongodb.com/docs/atlas/reference/amazon-aws/)
 - [Lista de acesso IP do Atlas](https://www.mongodb.com/docs/atlas/security/ip-access-list/)
 - [Segurança de rede do Atlas](https://www.mongodb.com/docs/atlas/architecture/current/network-security/)
 
