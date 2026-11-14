@@ -1,8 +1,8 @@
 # Arquitetura de nuvem — NotasMAX
 
-Este documento descreve a arquitetura alvo da aplicação em desenvolvimento. O frontend web e a API são publicados juntos em um Azure Container App, para manter a solução dentro dos recursos disponíveis na assinatura de estudante e reduzir componentes separados.
+Este documento descreve a arquitetura da aplicação. O frontend web e a API são publicados juntos em um Azure Container App, para manter a solução dentro dos recursos disponíveis na assinatura de estudante e reduzir componentes separados.
 
-O ambiente utiliza serviços gratuitos ou consumo que pode ser coberto pelo Azure for Students e pelos limites incluídos no GitHub. Gratuidade, disponibilidade regional, cotas e crédito dependem da assinatura e do uso.
+O projeto prioriza a utilização de serviços gratuitos ou de baixo consumo consumo que pode ser coberto pelo Azure for Students e pelos limites incluídos no GitHub. 
 
 ## Arquitetura alvo de desenvolvimento
 
@@ -32,9 +32,9 @@ Fonte editável: [diagrama-arquitetura-atlas-free.mmd](diagrama-arquitetura-atla
 
 Escolhemos o Chile Central pois foi a região mais próxima do banco disponivel na conta de estudante. O Azure também listava Brazil South, em São Paulo, mas o mesmo não estava disponivel para a assinatura no momento da criação dos recursos. 
 
-O Atlas M0 usado pelo projeto está na AWS em São Paulo (`sa-east-1`). Assim, as chamadas da API até o banco cruzam regiões e provedores de nuvem pela rede pública, protegidas por TLS. Essa distância pode acrescentar latência e custos variáveis de transferência. 
+O Atlas M0 usado pelo projeto está na AWS em São Paulo (`sa-east-1`). Assim, as chamadas da API até o banco cruzam regiões e provedores de nuvem pela rede pública, protegidas por TLS. Essa distância acaba podendo acrescentar latência e custos variáveis de transferência. 
 
-Porém a escolha atual priorizou utilizar os recursos disponiveis para a assinaturas de estudante ou gratuitos.
+Porém a escolha atual priorizou utilizar os recursos de baixo custos ou gratuitos.
 
 ### Como os recursos se comunicam
 
@@ -48,7 +48,7 @@ Porém a escolha atual priorizou utilizar os recursos disponiveis para a assinat
 
 O navegador abre a aplicação por HTTPS no endereço público do Container App. O container serve a interface web na raiz e a API no caminho `/NotasMax`, sob o mesmo host. O frontend chama esse caminho; por compartilharem a origem, as chamadas web não precisam atravessar um domínio de API separado.
 
-O app mobile chama o mesmo endpoint HTTPS e envia o JWT no cabeçalho `Authorization: Bearer`. Tanto as requisições web quanto as mobile chegam ao Container App; o cliente não se conecta diretamente ao MongoDB Atlas nem ao Blob Storage.
+O app mobile chama o mesmo endpoint HTTPS. Tanto as requisições web quanto as mobile chegam ao Container App; o cliente não se conecta diretamente ao MongoDB Atlas nem ao Blob Storage.
 
 #### Acesso da API aos dados e segredos
 
@@ -62,9 +62,9 @@ O endpoint do Blob Storage é público para permitir conectividade sem VNet pró
 
 - A aplicação web e a API são entregues pela mesma imagem e pelo mesmo Container App.
 - O site usa sessão por cookie `HttpOnly`, `Secure` e `SameSite=Lax`; a API aceita também JWT Bearer para os clientes mobile.
-- `MONGODB-URI`, `JWT-SECRET` e a credencial de leitura do GHCR ficam no Key Vault e não devem ser incluídos no código-fonte ou em configurações públicas.
+- `MONGODB-URI`, `JWT-SECRET` e a credencial de leitura do GHCR ficam no Key Vault e não foram incluídas no código-fonte ou em configurações públicas.
 - O GitHub Actions autentica no Azure por OIDC usando identidade de publicação separada, com permissão limitada à atualização do Container App. Essa identidade de publicação não é a identidade usada pela aplicação durante a execução.
-- O acesso ao Atlas é feito com um usuário de banco separado da conta usada para entrar no painel Atlas. A política de rede `/0` não substitui a autenticação do banco.
+- O acesso ao Atlas é feito com um usuário de banco separado da conta usada para entrar no painel Atlas. A política de rede `/0` não substituiu a autenticação do banco.
 
 #### RBAC em termos simples
 
@@ -85,11 +85,11 @@ O tamanho atual de 0,25 vCPU e 0,5 GiB, com no máximo uma réplica, atende ao o
 | Azure Container Apps Consumption | US$ 0 enquanto dentro das franquias aplicáveis | Cada assinatura recebe por mês 180.000 vCPU-segundos, 360.000 GiB-segundos e 2 milhões de solicitações HTTP externas sem custo. Com 0,25 vCPU e 0,5 GiB, as franquias de CPU e memória equivalem, cada uma, a aproximadamente 200 horas de uma réplica ativa por mês (cerca de 46 horas por semana), se não forem consumidas por outras aplicações da assinatura. Quando a aplicação está em zero réplicas, não há cobrança de computação. O excedente é cobrado por consumo. |
 | MongoDB Atlas Free M0 | US$ 0 | Dentro dos limites do plano Free. O M0 tem limites próprios de capacidade, disponibilidade de regiões e recursos de rede. |
 | GHCR | US$ 0 atualmente para armazenamento e transferência de imagens de Container Registry | A política atual do GitHub informa que armazenamento e transferência do Container Registry são gratuitos. Uso do GitHub Actions e artefatos continua sujeito às cotas do plano. |
-| Azure Blob Storage | Variável; total semanal não calculado | Cobrança depende de GB armazenados por mês, operações, transferência, redundância e região. A aplicação ainda não usa o container em um fluxo de arquivos. |
-| Azure Key Vault | Variável; total semanal não calculado | Cobrança depende do número e tipo de operações. |
-| Transferência de dados | Variável; total semanal não calculado | Pode depender do volume servido aos navegadores e clientes mobile e da comunicação entre Azure Chile Central e Atlas na AWS São Paulo. |
+| Azure Blob Storage | Variável | Cobrança depende de GB armazenados por mês, operações, transferência, redundância e região. A aplicação ainda não usa o container em um fluxo de arquivos. |
+| Azure Key Vault | Variável | Cobrança depende do número e tipo de operações. |
+| Transferência de dados | Variável | Pode depender do volume servido aos navegadores e clientes mobile e da comunicação entre Azure Chile Central e Atlas na AWS São Paulo. |
 
-**Estimativa-base:** US$ 0 por semana nas camadas com franquia ou plano gratuito, desde que os limites não sejam excedidos. O custo total não pode ser fechado sem medir armazenamento, operações do Key Vault, transferência e consumo compartilhado da assinatura. A conta de estudante pode cobrir cobranças elegíveis enquanto houver crédito aplicável, mas isso não altera as restrições de serviço e região. Esta arquitetura não inclui VNet nem NAT Gateway; portanto, não há custo semanal de NAT/IP reservado no desenho atual.
+**Estimativa-base:** US$ 0 por semana nas camadas com franquia ou plano gratuito, desde que os limites não sejam excedidos. O custo total não pode ser fechado sem medir armazenamento, operações do Key Vault, transferência e consumo compartilhado da assinatura por um longo período. A conta de estudante pode cobrir cobranças elegíveis enquanto houver crédito aplicável, mas isso não altera as restrições de serviço e região.
 
 ## Referências oficiais
 
