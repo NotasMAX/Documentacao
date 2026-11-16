@@ -20,14 +20,24 @@ Fonte editável: [diagrama-arquitetura-atlas-free.mmd](diagrama-arquitetura-atla
 
 ![Recursos do ambiente de desenvolvimento na assinatura Azure for Students](recursos-azure.png)
 
+#### Evidências do Foundry, Key Vault e Storage
+
+As capturas abaixo registram a implantação do modelo, os nomes dos segredos habilitados no Key Vault e as pastas visíveis no container `files`. Os valores dos segredos não são exibidos.
+
+![Modelo Phi-4-mini-instruct implantado no Azure AI Foundry](evidencias/azure-ai-foundry-modelo.png)
+
+![Segredos habilitados no Key Vault](evidencias/key-vault-segredos.png)
+
+![Pastas existentes no container files do Azure Blob Storage](evidencias/blob-storage-pastas.png)
+
 | Camada | Serviço e configuração atual | Custo de referência |
 |---|---|---|
 | Aplicação web e API | Um Azure Container App em ambiente Workload profiles, perfil Consumption, região Chile Central, ingress HTTPS público na porta 5000, 0,25 vCPU, 0,5 GiB e escala de zero a uma réplica. O mesmo container serve o frontend React/Vite e a API Node.js/Express. | US$ 0 enquanto o consumo permanecer nas franquias mensais do perfil Consumption; excedentes são cobrados conforme uso e região. |
 | Publicação da imagem | GitHub Actions publica uma imagem combinada no GHCR privado e atualiza o Container App por OIDC. | O armazenamento e a transferência de imagens de Container Registry estão atualmente gratuitos no GHCR. Minutos de Actions e armazenamento de artefatos seguem as cotas do plano GitHub. |
 | Banco de dados | MongoDB Atlas Free M0, cluster na AWS em São Paulo, com usuário da aplicação restrito ao banco `NotasMax`. | US$ 0 dentro dos limites do M0. |
-| Arquivos | Azure Storage Account `Standard_LRS`, camada Hot, região Chile Central; container `files` privado. O acesso da API usa identidade gerenciada e RBAC no escopo do container. | Variável conforme capacidade, operações e tráfego. A integração de arquivos ainda não é utilizada pelo fluxo atual da aplicação. |
+| Arquivos | Azure Storage Account `Standard_LRS`, camada Hot, região Chile Central; container `files` privado. Armazena fotos dos usuários e arquivos de exportação Excel; as pastas observadas incluem `fotos-perfil` e `importacoes-notas`. O acesso da API usa identidade gerenciada e RBAC no escopo do container. | Variável conforme capacidade, operações e tráfego. |
 | Segredos | Azure Key Vault Standard, região Chile Central. A identidade gerenciada do Container App tem acesso de leitura aos segredos necessários. | Variável conforme as operações. |
-| IA generativa | Azure AI Foundry, modelo `Phi-4-mini-instruc`, chamado no servidor pela API do Container App. A chave e a configuração do endpoint ficam no Key Vault. | Depende do modelo, da modalidade de implantação e do uso de tokens; não está incluído na estimativa-base. |
+| IA generativa | Azure AI Foundry, modelo `Phi-4-mini-instruct`, em uma conta Azure for Students de outro aluno. A API chama o modelo no servidor; endpoint, chave e nome do modelo ficam no Key Vault da conta do projeto. | Depende do modelo, da modalidade de implantação e do uso de tokens; não está incluído na estimativa-base. |
 
 ### Por que Chile Central
 
@@ -57,11 +67,11 @@ O Container App usa uma identidade gerenciada atribuída pelo sistema para acess
 
 Com a URI obtida por meio do segredo `MONGODB-URI`, a API conecta-se ao endpoint público do Atlas usando o usuário de banco e TLS. A lista de acesso Atlas está configurada como `0.0.0.0/0`, então qualquer endereço IPv4 pode tentar chegar ao endpoint; a autenticação do banco ainda exige credenciais válidas. Isso foi necessario pois Container App não tem VNet própria nem NAT Gateway e, portanto, não possui um IP de saída fixo.
 
-O endpoint do Blob Storage é público para permitir conectividade sem VNet própria, mas o container `files` é privado e não permite leitura anônima. A identidade do Container App precisa ser autorizada pelo RBAC para acessar os blobs. O navegador e o app mobile não acessam o Blob diretamente.
+O endpoint do Blob Storage é público para permitir conectividade sem VNet própria, mas o container `files` é privado e não permite leitura anônima. A identidade do Container App precisa ser autorizada pelo RBAC para acessar os blobs. O container mantém fotos dos usuários e arquivos de exportação Excel; o portal mostra as pastas `fotos-perfil` e `importacoes-notas`. O navegador e o app mobile não acessam o Blob diretamente.
 
 #### Inferência com Azure AI Foundry
 
-Na arquitetura alvo, somente a API no Container App chama o endpoint HTTPS de chat completions do Azure AI Foundry, usando o modelo `Phi-4-mini-instruc`. A chamada é feita no servidor com a chave de API no cabeçalho `api-key`; o navegador e o app mobile chamam apenas a API NotasMAX e nunca recebem a chave.
+Na arquitetura alvo, somente a API no Container App chama o endpoint HTTPS de chat completions do Azure AI Foundry, usando o modelo `Phi-4-mini-instruct`. O recurso Foundry está em uma conta Azure for Students de outro aluno, separada da conta que contém o Container App. Por isso, a API acessa o endpoint com uma chave de API guardada como segredo no Key Vault do projeto; não há identidade gerenciada compartilhada entre as duas contas. A chamada é feita no servidor com a chave no cabeçalho `api-key`; o navegador e o app mobile chamam apenas a API NotasMAX e nunca recebem a chave.
 
 O Container App usa sua identidade gerenciada atribuída pelo sistema e referências do Key Vault para disponibilizar a configuração ao processo da API:
 
@@ -102,7 +112,7 @@ O tamanho atual de 0,25 vCPU e 0,5 GiB, com no máximo uma réplica, atende ao o
 | MongoDB Atlas Free M0 | US$ 0 | Dentro dos limites do plano Free. O M0 tem limites próprios de capacidade, disponibilidade de regiões e recursos de rede. |
 | GHCR | US$ 0 atualmente para armazenamento e transferência de imagens de Container Registry | A política atual do GitHub informa que armazenamento e transferência do Container Registry são gratuitos. Uso do GitHub Actions e artefatos continua sujeito às cotas do plano. |
 | Azure AI Foundry | Variável | A cobrança varia conforme o consumo do  modelo |
-| Azure Blob Storage | Variável | Cobrança depende de GB armazenados por mês, operações, transferência, redundância e região. A aplicação ainda não usa o container em um fluxo de arquivos. |
+| Azure Blob Storage | Variável | Cobrança depende de GB armazenados por mês, operações, transferência, redundância e região. O container `files` mantém fotos dos usuários e arquivos Excel de exportação. |
 | Azure Key Vault | Variável | Cobrança depende do número e tipo de operações. |
 | Transferência de dados | Variável | Pode depender do volume servido aos navegadores e clientes mobile e da comunicação entre Azure Chile Central e Atlas na AWS São Paulo. |
 

@@ -12,22 +12,29 @@ flowchart LR
         actions -->|publica imagem| ghcr
     end
 
-    subgraph azure["Azure for Students — Chile Central"]
+    subgraph azure["Azure for Students"]
         direction LR
-        subgraph acaEnv["Container Apps Environment — Workload profiles"]
-            direction TB
-            app["Container App único\nFrontend React/Vite + API Node.js/Express\nConsumption · 0,25 vCPU · 0,5 GiB\n0–1 réplica · HTTPS público"]
+        subgraph projectAccount["Conta Azure for Students do projeto"]
+            direction LR
+            subgraph acaEnv["Container Apps Environment — Workload profiles"]
+                direction TB
+                app["Container App único\nFrontend React/Vite + API Node.js/Express\nConsumption · 0,25 vCPU · 0,5 GiB\n0–1 réplica · HTTPS público"]
+            end
+
+            subgraph dataServices["Dados, arquivos e segredos"]
+                direction TB
+                keyVault["Key Vault Standard\nMONGODB-URI · JWT-SECRET · GHCR-PULL-TOKEN\nAZURE-AI-ENDPOINT · AZURE-AI-API-KEY · AZURE-AI-MODEL"]
+                storage["Blob Storage\ncontainer files privado\nfotos de usuários · exportações Excel\nendpoint público · RBAC"]
+            end
         end
 
-        subgraph dataServices["Dados, arquivos e segredos"]
+        subgraph aiServices["Conta Azure for Students de outro aluno"]
             direction TB
-            keyVault["Key Vault Standard\nMONGODB-URI · JWT-SECRET · GHCR-PULL-TOKEN\nAZURE-AI-ENDPOINT · AZURE-AI-API-KEY · AZURE-AI-MODEL"]
-            storage["Blob Storage\ncontainer files privado\nendpoint público · RBAC"]
+            foundry["Azure AI Foundry\nmodelo Phi-4-mini-instruct\nChat Completions API"]
         end
     end
 
     atlas[("MongoDB Atlas Free M0\nAWS São Paulo\nlista IP: 0.0.0.0/0")]
-    foundry["Azure AI Foundry\nmodelo Phi-4-mini-instruc\nChat Completions API"]
 
     browser -->|HTTPS · frontend e API na mesma origem| app
     mobile -->|HTTPS · API /NotasMax · Bearer JWT| app
