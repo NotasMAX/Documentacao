@@ -132,10 +132,13 @@ Um documento de requisitos descreve as funcionalidades, características e restr
 
 | RF | Descrição |
 | --- | --- |
-| RF 31 | Armazenar as fotos dos usuários através do storage |
-| RF 32 | Armazenar a presença dos alunos durante as provas |
-| RF 33 | Detectar o crachá do aluno para registrar sua presença no sistema |
-| RF 34 | Exibir uma lista com as presenças registradas do dia do simulado para o usuário Administrador |
+| RF 31 | O sistema deve armazenar as fotos dos usuários através do storage |
+| RF 32 | O sistema deve conseguir armazenar a presença dos alunos durante as provas |
+| RF 33 | O sistema deve permitir a leitura de um QR code para registrar as presenças no sistema. |
+| RF 34 | O sistema deve exibir uma lista com as presenças registradas do dia do simulado para o usuário Administrador |
+| RF 35 | O sistema deve ser capaz de ler uma planilha Excel e transferir seus dados para seus respectivos lugares no sistema. |
+| RF 36 | O sistema deve armazenar as planilhas excel enviadas no sistema através do storage |
+| RF 37 | O sistema deve exibir um feedback sobre o desempenho dos alunos através de uma análise de ia |
 
 ## • Requisitos não funcionais
 
