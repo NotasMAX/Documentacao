@@ -727,9 +727,15 @@ Capturas abaixo registram telas e protótipos do sistema;
 
 # 12. Considerações finais
 
-As principais dificuldades do semestre estiveram relacionadas ao desenvolvimento do aplicativo mobile, já que em semestres anteriores o foco era exclusivamente web — demandando pesquisa e adaptação a esse novo padrão. Este foi também o primeiro contato da equipe com **.NET MAUI**, ainda que já houvesse familiaridade prévia com Visual Studio e C# de um semestre anterior.
+As principais dificuldades enfrentadas ao longo do semestre estiveram relacionadas à etapa de finalização do projeto, especialmente pela necessidade de implementar as funcionalidades que já havíamos planejado e, ao mesmo tempo, atender às exigências das disciplinas do semestre atual. 
 
-No semestre anterior, um escopo maior havia sido definido e nem todas as funcionalidades planejadas foram entregues — o que serviu de aprendizado para a definição de um escopo menor e mais realista neste semestre, permitindo um trabalho mais adequado e uma evolução gradual do projeto a cada semestre.
+Um dos principais contratempos que enfrentamos foi relacionado ao banco de dados. Inicialmente, havíamos planejado realizar a migração do MongoDB para o PostgreSQL, substituindo o modelo não relacional por um banco de dados relacional. No entanto, após dedicarmos um período a essa transição, percebemos que a mudança demandaria mais tempo e esforço do que havíamos previsto. Considerando que ainda precisávamos desenvolver e implementar diversas funcionalidades, concluímos que insistir nessa migração poderia comprometer a entrega final do projeto. Dessa forma, optamos por manter o MongoDB e concentrar nossos esforços nas funcionalidades restantes, garantindo que os requisitos estabelecidos fossem atendidos dentro do prazo disponível. 
+
+Além disso, destacaram-se as partes de Internet das Coisas (IoT) e Mineração de Dados, que exigiram uma atenção especial da nossa equipe. A maior dificuldade não estava necessariamente na implementação das funcionalidades, mas em identificar de que maneira os conceitos dessas disciplinas poderiam ser integrados ao projeto de forma coerente, útil e alinhada aos nossos objetivos. 
+
+Apesar desses desafios, cada nova exigência acabou estimulando nossa criatividade e nos incentivando a explorar possibilidades que ainda não havíamos considerado. Como resultado, conseguimos ampliar o projeto e desenvolver funcionalidades que, inicialmente, nem imaginávamos que fariam parte dele. 
+
+Agora, chegando ao final do curso, ao olharmos para toda essa trajetória, conseguimos perceber o quanto cada semestre foi importante para a evolução do projeto e, principalmente, para o nosso crescimento pessoal e profissional como desenvolvedores. Cada desafio enfrentado, cada dificuldade superada e cada conhecimento adquirido contribuíram para que chegássemos até aqui com uma visão mais ampla sobre o desenvolvimento de software e sobre tudo o que somos capazes de construir em equipe.
 
 ---
 
