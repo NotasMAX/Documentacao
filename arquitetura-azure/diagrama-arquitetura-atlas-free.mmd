@@ -21,17 +21,19 @@ flowchart LR
 
         subgraph dataServices["Dados, arquivos e segredos"]
             direction TB
-            keyVault["Key Vault Standard\nsegredos e credencial GHCR"]
+            keyVault["Key Vault Standard\nMONGODB-URI · JWT-SECRET · GHCR-PULL-TOKEN\nAZURE-AI-ENDPOINT · AZURE-AI-API-KEY · AZURE-AI-MODEL"]
             storage["Blob Storage\ncontainer files privado\nendpoint público · RBAC"]
         end
     end
 
     atlas[("MongoDB Atlas Free M0\nAWS São Paulo\nlista IP: 0.0.0.0/0")]
+    foundry["Azure AI Foundry\nmodelo Phi-4-mini-instruc\nChat Completions API"]
 
     browser -->|HTTPS · frontend e API na mesma origem| app
     mobile -->|HTTPS · API /NotasMax · Bearer JWT| app
     actions -->|deploy da revisão por OIDC| app
     ghcr -->|pull privado autenticado| app
     app -->|TLS · usuário de banco| atlas
-    app -. "identidade gerenciada / RBAC" .-> keyVault
+    keyVault -. "referências Key Vault via identidade gerenciada\nAZURE-AI-* → AZURE_AI_*" .-> app
     app -. "identidade gerenciada / RBAC" .-> storage
+    app -->|HTTPS POST /openai/v1/chat/completions\napi-key obtida do Key Vault| foundry
