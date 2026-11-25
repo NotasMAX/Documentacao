@@ -557,7 +557,7 @@ Sim. Ao longo do desenvolvimento, a equipe ampliou seus conhecimentos técnicos 
 
 <p align='center'><strong>Figura 3 - Modelo Canvas.</strong></p>
 
-<p align='center'><img alt='' src='./imagens/modelo_canvas.png' style='width: 750px;'></p>
+<p align='center'><img alt='' src='./imagens/ModeloCanvas.png' style='width: 750px;'></p>
 
 <p align='center'>Fonte: Os autores (2026).</p>
 
